@@ -1,0 +1,14 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/解决方案项/">
+    <File Path="code_note.md" />
+  </Folder>
+  <Project Path="task1/task1.vcxproj" Id="0931200e-b445-4a59-8ecd-19baa1833f7f" />
+  <Project Path="task2/task2.vcxproj" Id="ce41d4c6-ae57-423b-b990-1a1802690d86" />
+  <Project Path="task3/task3.vcxproj" Id="2d2b4ddb-fc7f-41b2-8b75-e8ceafb641b7" />
+  <Project Path="task4/task4.vcxproj" Id="ba6a16d2-ca1e-49ad-b028-8a962d0d400a" />
+  <Project Path="task5/task5.vcxproj" Id="21ea7142-d160-42f7-87ba-87342ef748e4" />
+</Solution>

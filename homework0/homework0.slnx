@@ -1,0 +1,11 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/解决方案项/">
+    <File Path="../code_note/code_note.md" />
+  </Folder>
+  <Project Path="task2/task2.vcxproj" Id="93b6f722-868f-4519-8e41-f042fb432834" />
+  <Project Path="task5/task5.vcxproj" Id="8e643b7b-10a1-43cd-bd0d-8e45ee57a0fe" />
+</Solution>
