@@ -1,15 +1,32 @@
-# Visual Studio C++ 项目编译&缓存文件
+# Visual Studio C++ 核心忽略规则
+# 项目缓存、IDE配置文件夹
 .vs/
+.vscode/
+
+# 编译输出目录（全大小写兼容）
 [Dd]ebug/
 [Rr]elease/
 x64/
 x86/
+[Bb]in/
+[Oo]bj/
+
+# vx开头的VS项目个人配置文件（无需提交的核心目标）
+*.vcxproj.user
+*.vcxproj.filters.user
+*.vcxproj.vspscc
+
+# 项目状态、本地缓存文件
 *.user
 *.suo
 *.ncb
 *.opendb
 *.vc.db
 *.vc.vc.opendb
+*.sdf
+*.cache
+
+# 编译生成的中间、链接、调试产物
 *.ilk
 *.pdb
 *.obj
@@ -17,11 +34,20 @@ x86/
 *.idb
 *.ipch
 *.log
-*.sdf
-*.cache
+*.tlog
+*.lastbuildstate
+*.sbr
+*.bsc
+*.exp
+*.lib
+*.dll
+*.exe
+
 # 临时/备份文件
 ~$*
 *.bak
+*.tmp
+
 # 系统冗余文件
 Thumbs.db
 .DS_Store
