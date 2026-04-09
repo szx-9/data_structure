@@ -22,6 +22,7 @@ typedef struct Node {
 
 void printAndDelete(Node* head);
 Node* add(Node* head, int weight);
+
 Node* minus(Node* head, int weight, ll* total);
 
 Node* merge(Node* head);
@@ -29,13 +30,11 @@ Node* merge(Node* head);
 
 int main()
 {
-	ll totalWeght = 0;//记录当前银块总重量
+	ll totalWeight = 0;//记录当前银块总重量
 	Node* head = NULL;//设置头节点为空节点，通过函数赋值
 	int opNum;
-	while (1) {
-		if (scanf("%d", &opNum)==EOF) {
-			break;
-		}//读入操作数
+	while (scanf("%d" ,&opNum)==1) {
+		//读入操作数
 		/*
 		如果大于零，则进入插入逻辑
 		小于零，进入卖出逻辑
@@ -45,10 +44,10 @@ int main()
 		if (opNum > 0) {
 			//插入逻辑
 			head = add(head, opNum);
-			totalWeght += opNum;
+			totalWeight += opNum;
 		}
 		else if (opNum < 0) {
-			head = minus(head, opNum, &totalWeght);
+			head = minus(head, opNum, &totalWeight);
 			//total在函数内自动更新
 		}
 		else {
@@ -85,7 +84,7 @@ Node* add(Node* head, int weight) {
 	Node* front = NULL;//head的前驱
 	Node* copy = head;
 	while (head) {
-		if (head->weight > cur->weight) {
+		if (head->weight >= cur->weight) {
 			if (front) {
 				//front非空，此时不是头节点
 				front->next = cur;
@@ -105,48 +104,41 @@ Node* add(Node* head, int weight) {
 }
 
 Node* minus(Node* head, int weight, ll* total) {
-	if (head == NULL)return NULL;
-	weight = -weight;//此时weight等于需要减去的数量
+	if (head == NULL) return NULL;
+	weight = -weight;
+
+	if ((ll)weight > *total) return head;
+
 	if ((ll)weight == *total) {
-		//需要释放节点
-		Node* res = head;
+		Node* p;
 		while (head) {
-			res = head;
+			p = head;
 			head = head->next;
-			free(res);
+			free(p);
 		}
+		*total = 0;
 		return NULL;
 	}
-	if ((ll)weight > *total) {
-		return head;
-	}
-	Node* res = head;//用于实时释放节点
-	while (weight > 0) {
-		if (head->weight == weight) {
-			//当前节点正好满足释放要求，释放这个节点后直接return其后继即可
-			*total -= weight;
-			Node* ans = head->next;
-			free(head);
-			return ans;
-		}
-		else if (head->weight > weight) {
-			//如果当前节点发现多余了、
-			head->weight -= weight;
-			*total -= weight;
-			return head;//当前节点减去需要的重量后继续成为头节点
 
+	while (head && weight > 0) {
+		if (head->weight <= weight) {
+			Node* del = head;
+			weight -= head->weight;
+			*total -= del->weight;
+			head = head->next;
+			free(del);
 		}
 		else {
-			//当前节点不够，需更新weight，total，并进行释放
-			res = head;
-			*total -= head->weight;
-			weight -= head->weight;
-
+			int remain = head->weight - weight;
+			*total -= weight;
+			Node* del = head;
 			head = head->next;
-			free(res);
+			free(del);
+			head = add(head, remain);
+			return head;
 		}
 	}
-	return NULL;
+	return head;
 }
 
 Node* merge(Node* head) {
