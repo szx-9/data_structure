@@ -69,18 +69,18 @@ typedef struct cusInfo {
 	int id;
 	int levelTime;
 	int waitTime;
-}curInfo;
+}cusInfo;
 
 int customNum[1005];
-curInfo curSpanCus[10005];//维护当前周期内所有用户信息,模拟队列
-curInfo window[6];//模拟窗口
+cusInfo waitQueue[10005];//维护当前周期内所有用户信息,模拟队列
+cusInfo window[6];//模拟窗口
 int ans[10005];//存储waittime
 
 int timespan;
 int curTotal=0;
 int wNum=0;//维护窗口人数
-int wrear = 3;//维护窗口数量
-int cfront = 0, crear = -1,cNum=0;//两者均为实际队首队尾,因为循环队列，所以最好额外维护一下总数
+int wOpNum = 3;//维护窗口数量
+int qFront = 0, qRear = -1,qNum=0;//两者均为实际队首队尾,因为循环队列，所以最好额外维护一下总数
 int curspan = 1;//当前周期
 
 int main()
@@ -102,7 +102,7 @@ int main()
 		renewWindow_minus();
 
 		curspan++;
-	} while (cNum>0||curspan<=timespan);//!!!!判定结束时，需要满足curspan>timespan&&cNum==0   任意一个不满足都不结束
+	} while (qNum>0||curspan<=timespan);//!!!!判定结束时，需要满足curspan>timespan&&cNum==0   任意一个不满足都不结束
 
 	Print();
 
@@ -116,11 +116,11 @@ void Print() {
 
 void renewWindow_minus() {
 	//!!!!原有窗口不能关，
-	while( wrear*7>cNum && wrear>3 && wrear > wNum){
+	while( wOpNum*7>qNum && wOpNum>3 && wOpNum > wNum){
 		//!!!!等于7时不能关
 		//满足人数，原窗口不关，有空窗
 
-		wrear--;//窗口数减少
+		wOpNum--;//窗口数减少
 		wNum--;//窗口人数显然也要减少
 		
 		for (int i = 1; i < 6; ++i) {
@@ -137,18 +137,18 @@ void renewWaitTime() {
 	//对等待队列中的等待时间实现自增，
 	// !!!!循环队列不能按照此逻辑访问
 	//!!!!需要用cNum判断是否队列为空，这里是循环队列，索引不能信
-	if (cNum <= 0){
+	if (qNum <= 0){
 		return ;
 	}
-	int index = cfront;
-	int end = crear;
+	int index = qFront;
+	int end = qRear;
 	while (index != end) {
-		(curSpanCus[index].waitTime)++;
+		(waitQueue[index].waitTime)++;
 		index++;
 		index %= MAX;
 	}
 	//!!!!end位置也需要更新等待时间
-	(curSpanCus[end].waitTime)++;
+	(waitQueue[end].waitTime)++;
 }
 
 void enterWindow() {
@@ -163,14 +163,14 @@ void enterWindow() {
 	*/
 	
 	
-	for (int i = 1; i < 6 && cNum>0; ++i) {
+	for (int i = 1; i < 6 && qNum>0; ++i) {
 		//遍历整个窗口，找到id0进入win队列
-		if (!window[i].id && cNum) {
+		if (!window[i].id && qNum) {
 			//当前位置空，无人
-			window[i].id = curSpanCus[cfront].id;
-			window[i].levelTime = curSpanCus[cfront].levelTime;
-			window[i].waitTime = curSpanCus[cfront].waitTime;
-			ans[curSpanCus[cfront].id] = curSpanCus[cfront].waitTime;//在入窗口时就更新ans数组
+			window[i].id = waitQueue[qFront].id;
+			window[i].levelTime = waitQueue[qFront].levelTime;
+			window[i].waitTime = waitQueue[qFront].waitTime;
+			ans[waitQueue[qFront].id] = waitQueue[qFront].waitTime;//在入窗口时就更新ans数组
 			
 			dequeue();
 			wNum++;
@@ -185,15 +185,6 @@ void enterWindow() {
 }
 
 void renewWindow_add() {
-	/*检查是否有新客户（当前周期数跟给定原始周期数）：
-		有：从curSpanCus队尾开始循环相应次：一个一个创建用户（详见下），更新队尾（取模）
-		利用curTotal更新头索引->用于创建用户对象（在数组空间中）
-		利用存储的人数，将所有用户的编号，初始等待时间0，服务等级时间，输入curSpan数组
-
-		有：（0人也算有新客户）判断是否加开窗口（以及增加几个，最多两个）
-		否：（不再进行窗口增加）
-	*/
-	
 	if (curspan <= timespan) {
 		//在curSpanCus中入队
 		int newCusNum = customNum[curspan];//当前周期的新用户
@@ -201,16 +192,15 @@ void renewWindow_add() {
 		for (int i = 0; i < newCusNum; ++i) {
 			enqueue();
 		}
-		
-		//！！！！新用户到达时：不需要考虑是否缩减窗口，因为如果可以缩减窗口会在周期中部执行
+
 		//通过实际等待人数判断是否需要加开窗口
-		int realWaitNum = cNum - (wrear-wNum);//此处是假设，空出位置有人入队
-		while(realWaitNum >= 7 * wrear) {
+		int realWaitNum = qNum;// 
+		while(realWaitNum >= 7 * wOpNum) {
 			//现在需要开窗口，没有没废弃窗口？
 			//遍历所有-1废弃窗口如果有则新增，没有则不进行任何操作
 			for (int i = 1; i < 6; ++i) {
 				if (window[i].id == -1) {
-					wrear++;
+					wOpNum++;
 					window[i].id = 0;//更新窗口状态
 					break;
 				}
@@ -222,22 +212,21 @@ void renewWindow_add() {
 }
 
 void enqueue() {
-	crear++;
-	if (crear >= MAX)crear %= MAX;
-	scanf("%d", &curSpanCus[crear].levelTime);
+	qRear++;
+	if (qRear >= MAX)qRear %= MAX;
+	
+	scanf("%d", &waitQueue[qRear].levelTime);
+	waitQueue[qRear].id = curTotal + 1;
+	waitQueue[qRear].waitTime = 0;
 
-	curSpanCus[crear].id = curTotal + 1;//！！！！这里注意尽量用最后统一给total自增的方式
-
-	curSpanCus[crear].waitTime = 0;
-
-	cNum++;//维护队长度
+	qNum++;//维护队长度
 
 	curTotal ++;
 }
 
 void dequeue() {
-	if (cNum<=0)return;//循环队列额外维护
-	cNum--;
-	cfront++;
-	if (cfront >= MAX)cfront %= MAX;
+	if (qNum<=0)return;//循环队列额外维护
+	qNum--;
+	qFront++;
+	if (qFront >= MAX)qFront %= MAX;
 }
