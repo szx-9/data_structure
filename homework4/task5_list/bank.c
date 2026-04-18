@@ -53,7 +53,7 @@ cs window[6];
 int wCsNum = 0;
 int wOpNum = 3;
 
-Node *qHead=NULL,*qRear;//注意野指针问题
+Node *qHead=NULL,*qRear=NULL;//注意野指针问题
 int qNum = 0;
 
 int curspan = 1, timespan;
@@ -65,13 +65,14 @@ int ans[10005];
 int main()
 {
 	window[4].id = window[5].id = -1;
-	qRear = (Node*)malloc(sizeof(Node));
-	qRear->next = qHead;//空队列：next存储qHead指向地址NULL
+	Node dummy;
+	qHead = qRear = &dummy;//！！！！定义dummy对象，队空时全部指向：head全程指向dummy
 
 	scanf("%d", &timespan);
-	for (int i = 1; i < timespan; ++i) {
+	for (int i = 1; i <= timespan; ++i) {
 		scanf("%d", &csNum[i]);
 	}
+
 	do {
 		renewWin_add();
 		enterWindow();
@@ -86,8 +87,8 @@ int main()
 	return 0;
 }
 void releaseAll() {
-	if (!qHead)return;
-	Node* cur = qHead;
+	if (!qNum)return;
+	Node* cur = qHead->next;
 	while (cur) {
 		Node* res = cur;
 		cur = cur->next;
@@ -100,7 +101,7 @@ void Print_list() {
 	}
 }
 void renewWin_minus() {
-	if (qNum < wOpNum * 7 && wOpNum>3 && wOpNum>3 ) {
+	if (qNum < wOpNum * 7 && wOpNum>3 && wOpNum>wCsNum ) {
 		wOpNum--;
 		for (int i = 1; i < 6; ++i) {
 			if (!window[i].id) {
@@ -111,29 +112,29 @@ void renewWin_minus() {
 	}
 }
 void renewWaitTime() {
-	if (!qHead) return;
-	Node* cur = qHead;
+	if (!qNum) return;
+	Node* cur = qHead->next;
 	while (cur) {
-		(cur->csInfo->levelTime)++;
+		(cur->csInfo->waitTime)++;
 		cur = cur->next;
 	}
 
 }
 void enterWindow() {
 	for (int i = 1; i < 6; ++i) {
-		if (!window[i].id && qHead!=NULL) {//空窗口且队列非空
-			window[i].id = qHead->csInfo->id;
-			window[i].levelTime = qHead->csInfo->levelTime;
-			ans[qHead->csInfo->id] = qHead->csInfo->waitTime;
+		if (!window[i].id && qNum>0) {//空窗口且队列非空
+			Node* qH = qHead->next;//！！！！每次迭代重新取队首
 			
-			Node* res = qHead;
-			qHead = qHead->next;
-			releaseNode(res);
+			window[i].id = qH->csInfo->id;
+			window[i].levelTime = qH->csInfo->levelTime;
+			ans[qH->csInfo->id] = qH->csInfo->waitTime;
+			
+			dequeue();
+			wCsNum++;
 		}
 		window[i].levelTime--;
-		if(!(window[i].levelTime) ){
-			window[i].id = -1;
-			wOpNum--;
+		if(!(window[i].levelTime) &&window[i].id>0) {
+			window[i].id = 0;//注意id
 			wCsNum--;
 		}
 	}
@@ -154,6 +155,7 @@ void renewWin_add() {
 		for (int i = 1; i < 6; ++i) {
 			if (window[i].id == -1) {
 				window[i].id = 0;
+				break;//硬伤
 			}
 		}
 	}
@@ -171,12 +173,15 @@ void enqueue() {
 	qNum++;
 }
 void dequeue() {
-	if (qRear->next == qHead)return;
-	Node* res = qHead;
-	qHead = qHead->next;
-	
-	free(res->csInfo);
-	free(res);
+	if (!qNum)return;
+	Node* res = qHead->next;
+	qHead->next = res->next;
+	if (qNum == 1) {
+		//！！！！更改队尾
+		qRear = qHead;
+	}
+	qNum--;
+	releaseNode(res);
 }
 
 
