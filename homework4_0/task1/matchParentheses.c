@@ -159,6 +159,6 @@ void popFlag() {
 	flagTop--;
 }
 void push(int sign,int row) {
-	flagStk[flagTop].row = row;
+	flagStk[flagTop].row = row;//保证鲁棒性和多种case，需要规范push每次都输入row防止最后数据混乱
 	flagStk[flagTop++].sign = sign;
 }
