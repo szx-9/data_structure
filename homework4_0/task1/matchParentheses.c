@@ -17,6 +17,7 @@ void skipQuotationMark(FILE* fin, int matchSign);
 void skipNote(FILE* fin);
 info getTop(info* flagStk);
 void popFlag();
+void push(int sign, int row);
 /*
 数据结构:符号栈（匹配括号），存储栈（记录答案）
 忽略：字符常量（双，单引号内容），注释（单行多行）
@@ -52,8 +53,7 @@ int main()
 			skipQuotationMark(fin, curChar);
 			break;
 		case '(':
-			flagStk[flagTop].sign = '(';
-			flagStk[flagTop++].row = curRowNum;
+			push(curChar, curRowNum);
 			ansStk[ansTop++] = '(';
 			break;
 		case '{':
@@ -76,7 +76,8 @@ int main()
 			break;
 		}
 	}
-	if (!flagTop) {
+
+	if (flagTop) {
 		PrintError(getTop(flagStk).sign, getTop(flagStk).row);
 		return 0;
 	}
@@ -114,7 +115,8 @@ int dealLeftParen(FILE* fin) {
 	}
 	//遇到{，入栈
 	ansStk[ansTop++] = '{';
-	flagStk[flagTop].sign = '{';//只有“（”需要row字段
+	int sign = '{';
+	push(sign,curRowNum);//只有“（”需要row字段
 	return 1;
 }
 
@@ -137,7 +139,7 @@ void skipNote(FILE* fin) {
 		curRowNum++;
 		return;
 	}
-	while (buf = getc(fin) != EOF) {
+	while( (buf = getc(fin) )!= EOF) {
 		if (buf == '*') {
 			if (getc(fin) == '/')
 				return;
@@ -155,4 +157,8 @@ void popFlag() {
 		return;
 	}
 	flagTop--;
+}
+void push(int sign,int row) {
+	flagStk[flagTop].row = row;
+	flagStk[flagTop++].sign = sign;
 }
