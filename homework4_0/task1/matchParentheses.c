@@ -77,7 +77,7 @@ int main()
 		}
 	}
 
-	if (flagTop) {
+	if (!isEmpty()) {
 		PrintError(getTop(flagStk).sign, getTop(flagStk).row);
 		return 0;
 	}
@@ -96,6 +96,7 @@ void PrintError(int sign, int row) {
 	printf("without maching '%c' at line %d\n", sign, row);
 }
 int dealRightParen(int matchSign) {
+	if (isEmpty())return 0;
 	if ((matchSign == ')' && getTop(flagStk).sign != '(')
 		|| (matchSign == '}' && getTop(flagStk).sign != '{')) {
 		PrintError(matchSign, curRowNum);
@@ -161,4 +162,7 @@ void popFlag() {
 void push(int sign,int row) {
 	flagStk[flagTop].row = row;//保证鲁棒性和多种case，需要规范push每次都输入row防止最后数据混乱
 	flagStk[flagTop++].sign = sign;
+}
+int isEmpty() {
+	return flagTop;
 }
