@@ -35,40 +35,46 @@ const web* inputDeal(int* type);
 void push(Stk* stkname, const web* webPage);
 void* pop(Stk* stkname);
 void clearForward();
-void renewRes(const web* webPage);
+void renewRes(const web* webPage,int);
 web* getTop(Stk* stkname);
 int isEmpty(Stk* stkname);
 int moveBack();
 int moveForward();
 void PrintAllWeb(int type);
 void renewViewOrder(const web* webPage);
+void release(Stk*);
 
-
-Stk back, forward,res,viewOrder;//res只存储网站用于最后统计数量，其余两者存储网页
+Stk back, forward,res,viewOrder;
+//res存储所有网页，按照从前到后的顺序，子网页一定出现在主网页后面，所以计算任务交给主网页，同时最后可以利用res进行释放
 int maxIndexRes=-1,maxViewNum=0;//最多网站在res中的索引
 char buf[100];//单行读入缓冲区
 
 
-web home = {
-	.name = "https://www.baidu.com/",
-	.viewNum = 1
-};
-web* cur = &home;
+web* cur ;
 web* resWeb = NULL;
 
 int main()
 {
+	web* home = (web*)malloc(sizeof(web));
+	strcpy(home->name, "https://www.baidu.com/");
+	home->viewNum = 1;
+	cur = home;
+	
 	int type = 0;
 	int isValid = 1;//是有效的
-	renewRes(cur);
+	int isCreate = 0;//当前节点是否网页是否初次创建
+	renewRes(cur,1);
 	renewViewOrder(cur);
+
 	while (1) {
+		isCreate = 0;
 		resWeb = inputDeal(&type);
 		switch (type) {
 		case OP_VISIT:
 			push(&back, cur);
 			cur = resWeb;
 			clearForward();
+			isCreate = 1;
 			break;
 		case OP_BACK:
 			isValid=moveBack();
@@ -79,17 +85,25 @@ int main()
 		case OP_QUIT_0:
 		case OP_QUIT_1:
 			PrintAllWeb(type);
+			release(&res);
 			return 0;
 		default:
 			break;
 		}
 		if (type&&isValid) {
 			//如果是有效轮则type大于零
-			renewRes(cur);//每轮开始将cur记录到res用于统计“网站”数量
+			renewRes(cur,isCreate);//每轮开始将cur记录到res用于统计“网站”数量
 			renewViewOrder(cur);
 		}
 	}
 	return 0;
+}
+void release(Stk* stkname) {
+	int len = stkname->top;
+	if (!len)return;
+	for (int i = 1; i < len; ++i) {//baidu是栈上变量不能free，最好统一
+		free(stkname->Stk[i]);
+	}
 }
 void renewViewOrder(const web* webPage) {
 	push(&viewOrder, webPage);
@@ -138,7 +152,7 @@ void* pop(Stk* stkname) {
 void clearForward() {
 	forward.top = 0;
 }
-void renewRes(const web* webPage) {
+void renewRes(const web* webPage,int isCreate) {
 	//将一个web指针查找入栈，同时更新最值
 	int lenRes = res.top;
 	for (int i = 0; i < lenRes; ++i) {
@@ -149,10 +163,12 @@ void renewRes(const web* webPage) {
 				maxViewNum = res.Stk[i]->viewNum;
 				maxIndexRes = i;
 			}
-			return;
+			if (strcmp(webPage->name, res.Stk[i]->name)==0)return;//same->no push
+			break;//subpage->push
 		}
 	}
-	res.Stk[res.top++] = webPage;
+	if(isCreate)//初次创建才入res
+		res.Stk[res.top++] = webPage;
 }
 web* getTop(Stk* stkname) {
 	if (!stkname->top) {
