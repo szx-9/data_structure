@@ -72,7 +72,7 @@ ele buildEle(int type,double data) {
 			rt = LEF; break;
 		case ')':
 			rt = RIG; break;
-		defalut:
+		default:
 			printf("ERROR_BUILD\n");
 		}
 		returnEle.data = rt;
@@ -117,10 +117,10 @@ char bufNum[6];//存储一个数字用于atoi
 int bufIndex = 0;
 int main()
 {
-	int curInput;
 	while (1) {
+		int curInput=0;
 		bufIndex = 0;
-		scanf(" %c", &curInput);
+		scanf(" %c", &curInput);//！！！scanf格式符的作用时判断如何操作内存：
 		if (curInput == '=') {
 			//将辅助栈opRes中所有符号弹出
 		exit:
@@ -134,7 +134,8 @@ int main()
 			bufNum[bufIndex++] = curInput;
 			scanf(" %c", &curInput);
 			while (isdigit(curInput)) {
-				bufNum[bufIndex++] = curInput;
+				bufNum[bufIndex++] =(char) curInput;
+				scanf(" %c", &curInput);
 			}
 			//curInput现在指向一个非数字符号,需要直接入判断符号的环节
 			bufNum[bufIndex] = '\0';
@@ -185,7 +186,7 @@ int main()
 			pop(&ans);
 			ele fir = getTop(&ans);
 			pop(&ans);
-			push(&ans, buildEle(IS_NUM, cal(fir.data, sec.data, curEle.type)));
+			push(&ans, buildEle(IS_NUM, cal(fir.data, sec.data, curEle.data)));
 		}
 	}
 	printf("%.2f", ans.stk[0].data);
