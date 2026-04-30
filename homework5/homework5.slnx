@@ -1,0 +1,8 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="task0_tree_build_and_traversal/task0_tree_build_and_traversal.vcxproj" />
+  <Project Path="task1_BST_level-order-traversal/task1_BST_level-order-traversal.vcxproj" />
+</Solution>
