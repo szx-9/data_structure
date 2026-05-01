@@ -41,9 +41,13 @@ tnode* treeInit() {
 dataType* buildDnode(char *buf) {
 	dataType* cur = (dataType*)malloc(sizeof(dataType));
 	cur->word = (char*)malloc(sizeof(char) * MAX);
-	cur->cnt = 0;
+	cur->cnt = 1;
 	strcpy(cur->word, buf);
 	return cur;
+}
+void release(tnode* cur) {
+	free(cur->data->word);
+	free(cur);
 }
 tnode* buildTnode(dataType* dnode) {
 	tnode* cur = (tnode*)malloc(sizeof(tnode));
@@ -54,32 +58,42 @@ tnode* buildTnode(dataType* dnode) {
 
 int insertBst(tnode* dummy, tnode* cur) {
 	//将cur插入到bst中
+	if (dummy == NULL) {
+		printf("ERROR_INSERT\n");
+		return INSERT_N;
+	}
 	tnode* head = dummy->data->cnt==-1? dummy->r:dummy;
 	if (head == NULL) {
 		dummy->r = cur;
 		return INSERT_Y;
 	}
-	int order = strcmp(dummy->data, cur->data);
-	if (order < 0 && dummy->l == NULL) {
-		dummy->l = cur;
-		return INSERT_Y;
+	int state = 0;
+	int order = strcmp(head->data->word, cur->data->word);
+	if (order > 0 ) {
+		if (head->l == NULL) {
+			head->l = cur;
+			return INSERT_Y;
+		}
+		else{
+			state = insertBst(head->l, cur);
+			if (state == 1)return INSERT_Y;
+		}
+		
 	}
-	if (order > 0 && dummy->r == NULL) {
-		dummy->r = cur;
-		return INSERT_Y;
+	if (order < 0 ) {
+		if (head->r==NULL) {
+			head->r = cur;
+			return INSERT_Y;
+		}
+		else{
+			state = insertBst(head->r, cur);
+			if (state == 1)return INSERT_Y;
+		}
 	}
 	if (order == 0) {
-		dummy->data->cnt++;
+		head->data->cnt++;
+		release(cur);
 		return INSERT_Y;
-	}
-	int state = 0;
-	if (dummy->l) {
-		state = insertBst(dummy->l, cur);
-		if (state == 1)return INSERT_Y;
-	}
-	if (dummy->r) {
-		state = insertBst(dummy->r, cur);
-		if (state == 1)return INSERT_N;
 	}
 	printf("ERROR_INSERT\n");
 	return INSERT_N;
@@ -126,7 +140,14 @@ void printFre(tnode* dummy) {
 	}
 	printf("\n");
 
-	mTra(head);
+	mTra(dummy->r);//注意dummy和head混用问题
+}
+void releaseAll(tnode* dummy) {
+	if (dummy == NULL)return;
+	releaseAll(dummy->l);
+	releaseAll(dummy->r);//注意顺序
+	release(dummy);
+
 }
 
 int main()
@@ -136,6 +157,8 @@ int main()
 	buildBstTree(fin,dummy);
 	printFre(dummy);
 	fclose(fin);
-
+	
+	releaseAll(dummy->r);
+	free(dummy);
 	return 0;
 }
