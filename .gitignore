@@ -54,3 +54,8 @@ Thumbs.db
 /homework3_1/task1/in.txt
 /homework3_1/task1/out1.txt
 /homework3_1/task1/out2.txt
+
+# 后续追加：转向vsc后可以忽略的vs配置文件（需要恢复vs后恢复即可）
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
