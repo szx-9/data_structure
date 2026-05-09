@@ -84,6 +84,7 @@ desktop.ini
 # 题目测试产物
 *.hzip
 **/task*/*.vcxproj
+*.txt
 homework5/task2_treecal.c/task2_treecal.c.vcxproj
 
 # 例外规则：如需保留项目说明文档，取消下方注释即可
