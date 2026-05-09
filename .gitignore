@@ -1,20 +1,27 @@
 # Visual Studio C++ 核心忽略规则
-# 项目缓存、IDE配置文件夹
-.vs/
-.vscode/
+# 项目缓存、IDE配置文件夹（全目录递归匹配）
+**/.vs/
+**/.vscode/
 
-# 编译输出目录（全大小写兼容）
-[Dd]ebug/
-[Rr]elease/
-x64/
-x86/
-[Bb]in/
-[Oo]bj/
+# 编译输出目录（全大小写兼容+全目录递归匹配，覆盖所有子文件夹的编译产物）
+**/[Dd]ebug/
+**/[Rr]elease/
+**/x64/
+**/x86/
+**/[Bb]in/
+**/[Oo]bj/
+**/output/
+**/out/
 
 # vx开头的VS项目个人配置文件（无需提交的核心目标）
 *.vcxproj.user
 *.vcxproj.filters.user
 *.vcxproj.vspscc
+
+# VS解决方案文件（转向VS Code后可忽略，需恢复VS时注释掉对应行即可）
+*.sln
+*.slnx
+*.sln.docstates
 
 # 项目状态、本地缓存文件
 *.user
@@ -43,23 +50,42 @@ x86/
 *.dll
 *.exe
 
+# C/C++ GCC/MinGW/Clang 编译产物（适配VS Code编译场景）
+*.o
+*.out
+*.d
+*.dSYM/
+*.so
+*.dylib
+*.a
+
 # 临时/备份文件
 ~$*
 *.bak
 *.tmp
+*.swp
+*.swo
 
 # 系统冗余文件
 Thumbs.db
 .DS_Store
+desktop.ini
+
+# 自定义题目测试用例文件
 /homework3_1/task1/in.txt
 /homework3_1/task1/out1.txt
 /homework3_1/task1/out2.txt
+**/task*/**/*.txt
 
 # 后续追加：转向vsc后可以忽略的vs配置文件（需要恢复vs后恢复即可）
 *.vcxproj
 *.vcxproj.filters
 
 # 题目测试产物
-*.txt
 *.hzip
+**/task*/*.vcxproj
 homework5/task2_treecal.c/task2_treecal.c.vcxproj
+
+# 例外规则：如需保留项目说明文档，取消下方注释即可
+# !README.md
+# !README.txt
