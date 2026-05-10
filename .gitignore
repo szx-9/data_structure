@@ -90,4 +90,6 @@ homework5/task2_treecal.c/task2_treecal.c.vcxproj
 # 例外规则：如需保留项目说明文档，取消下方注释即可
 # !README.md
 # !README.txt
-homework5/task5_huaffman_zip/.claude/settings.local.json
+# Claude Code 项目本地文件（不需要提交）
+CLAUDE.md
+.claude/
