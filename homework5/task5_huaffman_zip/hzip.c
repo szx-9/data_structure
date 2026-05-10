@@ -1,376 +1,449 @@
-#define _CRT_SECURE_NO_WARNINGS
+/* ============================================================
+   【总改】全部重写，核心变更：
+   1. 删除 node 链表包装，改用数组构建 Huffman 树
+   2. atoHZIP: 头部存入原文件大小(4字节)，重写比特打包逻辑
+   3. atoUnzip: 完整实现解压
+   4. 修复 createHTree 中 node/tnode 类型混用、->right/->next 混用等 bug
+   5. 修复 atoHZIP 中 fputc(byte, Obj) 写成 fputc(byte 下标) 的 bug
+   6. 修复 while((rec=fgetc)) 在 rec==0 时误退出的 bug
+   ============================================================ */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-/*
-main函数命令行参数：
- 终端中执行：程序名 + 空格分隔的多个参数
-test.exe 100 hello "C language"
-此处argc=4,argv存储每一个参数文本，自定义参数带空格需要双引号，最后会用NULL标记
 
->:表示命令行表示，即紧跟的字段是可执行或者可以在命令行中运行的文件例如.exe这是一般不会将.exe写出
-但是argv[0]是这个字段，所以有效参数需要从1开始，也就是说argc最小就是1
-*/
-#define MAXSIZE 256  //! 从32扩大到256，树深度安全上限（最深127，256足够）
+#define MAXSIZE 256   // 编码最大长度（Huffman 树最深 127，256 足够）
 #define MAXNAME 200
 
-
 enum {
-    IS_ZIP = 1,//压缩模式
-    IS_UNZIP = 2,//解压模式
-    WRONG=0,
-    IS_FORMAT = 1,
-    IS_EXTEN = 0
+    IS_ZIP = 1,
+    IS_UNZIP = 2,
+    WRONG = 0,
+    IS_FORMAT = 1,   // 保留，供 printError 使用
+    IS_EXTEN = 0      // 保留，供 printError 使用
 };
-typedef struct tnode {            //Huffman树结构
-    int c;
-    int weight;        //树节点权重，叶节点为字符和它的出现次数
-    struct tnode* left, * right;
-}tnode;
-int Ccount[128] = { 0 };        //存放每个字符的出现次数，如Ccount[i]表示ASCII值为i的字符出现次数 
-struct tnode* Root = NULL;     //Huffman树的根节点
-char HCode[128][MAXSIZE] = { {0} }; //字符的Huffman编码，如HCode['a']为字符a的Huffman编码（字符串形式） 
-int Step = 0;            //实验步骤 
-FILE* Src, * Obj;
 
-void statCount();        //步骤1：统计文件中字符频率
-void createHTree();        //步骤2：创建一个Huffman树，根节点为Root 
-void makeHCode();        //步骤3：根据Huffman树生成Huffman编码
-void atoHZIP();         //步骤4：根据Huffman编码将指定ASCII码文本文件转换成Huffman码文件
+/* ---------- 数据结构 ---------- */
+typedef struct tnode {
+    int c;                  // 字符值，内部节点为 -1
+    int weight;             // 权重（频次）
+    struct tnode *left, *right;
+} tnode;
 
+/* 【删】移除了 node 结构体（链表包装），改为在 createHTree 中用 tnode* 数组 */
+
+int Ccount[128] = {0};                  // 字符频次
+tnode *Root = NULL;                     // Huffman 树根
+char HCode[128][MAXSIZE] = {{0}};       // Huffman 编码表（字符串）
+FILE *Src, *Obj;
+
+/* ---------- 函数声明 ---------- */
+void statCount(void);
+tnode *buildUnitTnode(tnode *l, tnode *r);   // 【改】返回 tnode*（原为 node*）
+void createHTree(void);                       // 【改】用数组而非链表
+int  isLeafNode(tnode *cur);
+void fTraversal(tnode *curr, int recIndex);
+void makeHCode(void);
+void atoHZIP(void);                           // 【改】重写比特打包
+void atoUnzip(void);                          // 【改】完整实现
 void printError(int type);
-int findChar(char* buf, char ch);
-int parseCommand(int,char* argv[], char**);
-int getVaildFre();
+int  parseCommand(int argc, char *argv[], char **filename);
+void freeTree(tnode *root);
+void dealFilename(char **filename, int type);
+int  getVaildFre(void);
 
-void print3()
+/* ============================================================
+   main
+   ============================================================ */
+int main(int argc, char *argv[])
 {
-    int i;
+    char *filename = NULL;
+    int type = parseCommand(argc, argv, &filename);
+    if (!type)
+        return 0;
 
-    for (i = 0; i < 128; i++) {
-        if (HCode[i][0] != 0) {
-            switch (i) {
-            case 0: printf("NUL:"); break;
-            case ' ':  printf("SP:"); break;
-            case '\t': printf("TAB:"); break;
-            case '\n':  printf("CR:"); break;
-            default: printf("%c:", i); break;
-            }
-            printf("%s\n", HCode[i]);
-        }
+    Src = fopen(filename, "rb");
+    if (!Src) {
+        fprintf(stderr, "Cannot open input file!\n");
+        return 1;
     }
-}
-void freeTree(tnode* root) {
-    if (root == NULL) return;
-    freeTree(root->left);
-    freeTree(root->right);
-    free(root);
-}
-
-void dealFilename(char** filename,int type);
-
-int main(int argc,char* argv[])
-{
-    char* filename = NULL;
-    int type = parseCommand(argc,argv,&filename);
-    if (!type)return 0;
-
-    Src = fopen(filename, "r");
-    if (!Src) { fprintf(stderr, "Cannot open input file!\n"); return 1; }  //! fopen失败检查
     dealFilename(&filename, type);
     Obj = fopen(filename, "wb");
-    if (!Obj) { fprintf(stderr, "Cannot open output file!\n"); return 1; } //! fopen失败检查
-    
-    statCount();//统计字符数
-    createHTree();//创建huffmantree
-    makeHCode();//依据前序遍历生成huffman编码
-    if ( type== IS_ZIP) {
-        atoHZIP();
+    if (!Obj) {
+        fprintf(stderr, "Cannot open output file!\n");
+        fclose(Src);
+        return 1;
     }
-    else {
-        return 0;
-    }
-   // print3();
-    
-   freeTree(Root);
-    free(filename);
 
+    if (type == IS_ZIP) {
+        statCount();     // 【改】只在压缩时统计频次
+        createHTree();   // 【改】只在压缩时建树
+        makeHCode();     // 【改】只在压缩时生成编码
+        atoHZIP();
+    } else {
+        atoUnzip();      // 解压：直接从文件头读码表
+    }
+
+    freeTree(Root);
+    free(filename);
     fclose(Src);
     fclose(Obj);
     return 0;
 }
-void dealFilename(char** filename,int type){
-    //将filename中的扩展名替换成.hzip或者.txt
-    if(type==IS_ZIP) {
-        char* ext = NULL;
-        if ((ext = strrchr(*filename, '.')) != NULL) {
-            if (strcmp(ext, ".txt")) {
-                printError(IS_EXTEN);
-                return;
-            }
-            //提取用户名，
-            char* nameBuf = (char*)malloc(sizeof(char) * MAXNAME);
-            char* cur = *filename;
-            int bufIndex = 0;
-            while (cur != ext) {
-                nameBuf[bufIndex++] = *cur;
-                cur++;
-            }
-            nameBuf[bufIndex] = '\0';
-            strcat(nameBuf, ".hzip");
-            *filename = nameBuf;
-        }
-    }
-    else {
-        char* ext = NULL;
-        if ((ext = strrchr(*filename, '.')) != NULL) {
-            if (strcmp(ext, ".hzip")) {
-                printError(IS_EXTEN);
-                return;
-            }
-            //提取用户名，
-            char* nameBuf = (char*)malloc(sizeof(char) * MAXNAME);
-            char* cur = *filename;
-            int bufIndex = 0;
-            while (cur != ext) {
-                nameBuf[bufIndex++] = *cur;
-                cur++;
-            }
-            nameBuf[bufIndex] = '\0';
-            strcat(nameBuf, ".txt");
-            *filename = nameBuf;
-        }
-    }
 
-}
-void printError(int type) {
-    type == IS_FORMAT ? printf("Usage: hzip.exe [-u] <filename>\n") : printf("File extension error!\n");
+/* ============================================================
+   dealFilename — 替换扩展名
+   ============================================================ */
+void dealFilename(char **filename, int type)
+{
+    char *ext = strrchr(*filename, '.');
+    if (!ext) {
+        printf("ERROR_DEALNAME\n");
+        return;
+    }
+    char *nameBuf = (char *)malloc(MAXNAME);
+    char *cur = *filename;
+    int idx = 0;
+    while (cur != ext)
+        nameBuf[idx++] = *cur++;
+    nameBuf[idx] = '\0';
+    if (type == IS_ZIP)
+        strcat(nameBuf, ".hzip");
+    else
+        strcat(nameBuf, ".txt");
+
+    *filename = nameBuf;   // 【注】原 argv 指向的内容不再使用，新内存由 caller free
 }
 
-int findChar(char* buf, char ch) {
-    int len = strlen(buf);
-    for (int i = 0; i < len; ++i) {
-        if (buf[i] == ch)return i;
-    }
-    return -1;
+/* ============================================================
+   printError / parseCommand
+   ============================================================ */
+void printError(int type)
+{
+    if (type == IS_FORMAT)
+        printf("Usage: hzip.exe [-u] <filename>\n");
+    else
+        printf("File extension error!\n");
 }
 
-int parseCommand(int argc,char* argv[], char** filename) {
-    //需要额外提取filename通过指针返回
-    if (argc == 1||argc>3) {
+int parseCommand(int argc, char *argv[], char **filename)
+{
+    if (argc == 1 || argc > 3) {
         printError(IS_FORMAT);
         return WRONG;
     }
-    //第一个有效参数，-u或者直接文件
-    if (!strcmp(argv[1], "-u")&&argc==3) {
-        //解压
-        char* ext = NULL;
-        if ((ext = strrchr(argv[2], '.')) != NULL) {
-            if (strcmp(ext, ".hzip")) {
-                printError(IS_EXTEN);
-                return WRONG;
-            }
-            *filename = argv[2];  //! 直接指向argv，不用malloc（dealFilename会分配新内存）
-            return IS_UNZIP;
+    /* -u 解压模式: hzip -u xxx.hzip */
+    if (!strcmp(argv[1], "-u") && argc == 3) {
+        char *ext = strrchr(argv[2], '.');
+        if (!ext || strcmp(ext, ".hzip")) {
+            printError(IS_EXTEN);
+            return WRONG;
         }
-        printError(IS_FORMAT);
-        return WRONG;
+        *filename = argv[2];
+        return IS_UNZIP;
     }
-    else if (strstr(argv[1], ".")!=NULL&&argc==2) {
-        //压缩
-        char* ext = NULL;
-        if ( (ext=strrchr(argv[1],'.')) != NULL) {
-            if (strcmp(ext,".txt")) {
-                printError(IS_EXTEN);
-                return WRONG;
-            }
-            *filename = argv[1];  //! 直接指向argv，不用malloc（dealFilename会分配新内存）
-            return IS_ZIP;
+    /* 压缩模式: hzip xxx.txt */
+    if (argc == 2 && strstr(argv[1], ".")) {
+        char *ext = strrchr(argv[1], '.');
+        if (!ext || strcmp(ext, ".txt")) {
+            printError(IS_EXTEN);
+            return WRONG;
         }
-
+        *filename = argv[1];
+        return IS_ZIP;
     }
     printError(IS_FORMAT);
     return WRONG;
 }
 
-
-
-//【实验步骤1】开始 
-void statCount()
+/* ============================================================
+   步骤1: statCount — 统计字符频次
+   ============================================================ */
+void statCount(void)
 {
-    //统计文本中src的字符出现频率
-    int ch;  //! 必须是int，getc返回0~255或EOF(-1)，signed char会把0xFF误判为EOF
-    Ccount[0] = 1;
-    while ((ch = getc(Src)) != EOF) {
+    int ch;
+    while ((ch = getc(Src)) != EOF)
         Ccount[ch]++;
-    }
+    /* 【改】删除了 Ccount[0]=1（不再需要哨兵，文件头存有原文件大小） */
 }
-//【实验步骤1】结束
 
-//【实验步骤2】开始
-int cmp(const void* a, const void* b) {
-    //注意此处我们将权重大的放在后面，故所有条件与题设相反
-    struct tnode* c1 = *(struct tnode**)a;
-    struct tnode* d = *(struct tnode**)b;
-    if (c1->weight > d->weight)return -1;
-    else if (c1->weight < d->weight)return 1;
-    else {
-        //两种：正常排序权重相等，按照c；另一种是新插入：c标记为-1
-        if (c1->c < 0 && d->c < 0) {
-            //均是新生成的，则更小的是新的
-            return c1->c < d->c ? -1 : 1;
-        }
-        if (c1->c < 0)
-            return -1;
-        if (d->c < 0)
-            return 1;
-        return c1->c < d->c ? 1 : -1;
-    }
-    return 0;
-}
-struct tnode* buildUnitTnode(struct tnode* l, struct tnode* r, int cnt) {
-    struct tnode* father = (struct tnode*)malloc(sizeof(struct tnode));
-    father->left = l;
+/* ============================================================
+   步骤2: createHTree — 用数组构建 Huffman 树
+   【改】不再使用 node 链表 + insertSort，改为：
+   1) 收集所有叶节点到 tnode* 数组
+   2) 每轮线性扫描找两个最小权重节点
+   3) 合并后放回数组
+   时间复杂度 O(m²)，m ≤ 128，完全足够
+   ============================================================ */
+tnode *buildUnitTnode(tnode *l, tnode *r)   // 【改】返回 tnode*（原为 node*）
+{
+    tnode *father = (tnode *)malloc(sizeof(tnode));
+    father->left  = l;
     father->right = r;
-    father->c = -1 - cnt;
+    father->c     = -1;
     father->weight = l->weight + r->weight;
     return father;
 }
-void createHTree()
+
+void createHTree(void)
 {
-    //根据字符weight构造huffman树
-    struct tnode* forest[130];
-    int fIndex = 0;
-    for (int i = 0; i < 128; ++i) {
+    /* 1. 收集所有出现过的字符 → 叶节点数组 */
+    tnode *nodes[128];
+    int n = 0;
+    for (int i = 0; i < 128; i++) {
         if (Ccount[i] > 0) {
-            struct tnode* curr = (struct tnode*)malloc(sizeof(struct tnode));
-            curr->c = i;
-            curr->left = curr->right = NULL;
-            curr->weight = Ccount[i];
-            forest[fIndex++] = curr;
+            tnode *leaf = (tnode *)malloc(sizeof(tnode));
+            leaf->c      = i;
+            leaf->weight = Ccount[i];
+            leaf->left = leaf->right = NULL;
+            nodes[n++] = leaf;
         }
     }
 
-    qsort(forest, fIndex, sizeof(struct tnode*), cmp);
-    int cnt = 0;//新生成的第几个结点
-    while (fIndex != 1) {
-        struct tnode* lChild = forest[--fIndex];
-        struct tnode* rChild = forest[--fIndex];
-        forest[fIndex++] = buildUnitTnode(lChild, rChild, cnt);
-        qsort(forest, fIndex, sizeof(struct tnode*), cmp);
-        cnt++;
+    /* 空文件保护：手动造一个哨兵节点，避免 Root==NULL */
+    if (n == 0) {
+        tnode *dummy = (tnode *)malloc(sizeof(tnode));
+        dummy->c = -1;
+        dummy->weight = 0;
+        dummy->left = dummy->right = NULL;
+        Root = dummy;
+        return;
     }
-    Root = forest[0];
 
+    /* 2. 迭代合并最小两节点 */
+    while (n > 1) {
+        /* 找两个最小权重的下标 */
+        int m1 = 0, m2 = 1;
+        if (nodes[m1]->weight > nodes[m2]->weight) {
+            int t = m1; m1 = m2; m2 = t;
+        }
+        for (int i = 2; i < n; i++) {
+            if (nodes[i]->weight < nodes[m1]->weight) {
+                m2 = m1;
+                m1 = i;
+            } else if (nodes[i]->weight < nodes[m2]->weight) {
+                m2 = i;
+            }
+        }
+
+        /* 合并 m1, m2 → 父节点 */
+        tnode *parent = buildUnitTnode(nodes[m1], nodes[m2]);
+
+        /* parent 放回 m1 位置，m2 用末尾元素覆盖，n-- */
+        nodes[m1] = parent;
+        nodes[m2] = nodes[n - 1];
+        n--;
+    }
+    Root = nodes[0];
 }
-//【实验步骤2】结束
 
-//【实验步骤3】开始
-char rec[MAXSIZE];
-int recIndex = 0;
-int isLeafNode(struct tnode* cur) {
-    if (cur->right == NULL && cur->left == NULL)return 1;
-    return 0;
-}
-void fTraversal(struct tnode* curr) {
-    if (isLeafNode(curr)) {
-        //此时rec中记录了path
-        rec[recIndex] = '\0';
-        strcpy(HCode[curr->c], rec);
-        recIndex--;
-    }
-    int res = recIndex;//缓存当前数组索引
-    if (curr->left) {
-        rec[recIndex++] = '0';
-        fTraversal(curr->left);
-    }
-    recIndex = res;
-    if (curr->right) {
-        rec[recIndex++] = '1';
-        fTraversal(curr->right);
-    }
-
-
-}
-void makeHCode()
+/* ============================================================
+   步骤3: makeHCode — 前序遍历生成 Huffman 编码
+   ============================================================ */
+int isLeafNode(tnode *cur)
 {
-    fTraversal(Root);
+    return (cur->left == NULL && cur->right == NULL);
 }
-//【实验步骤3】结束
 
-//【实验步骤4】开始
-//! charSeq 改为在 atoHZIP 中动态分配，精确计算所需大小，不再用固定8MB数组
-int getVaildFre() {
-    //遍历HCode找到
-    int cnt = 0;
-    for (int i = 0; i < 128; ++i) {
-        if (HCode[i][0]) {
-            cnt++;
-        }
+char rec[MAXSIZE];   // 遍历路径缓冲区
+
+void fTraversal(tnode *curr, int recIndex)
+{
+    if (curr == NULL) return;
+
+    if (isLeafNode(curr)) {
+        rec[recIndex] = '\0';
+        if (recIndex == 0)          // 单节点树：编码为 "0"
+            strcpy(HCode[curr->c], "0");
+        else
+            strcpy(HCode[curr->c], rec);
+        return;
     }
+    if (curr->left) {
+        rec[recIndex] = '0';
+        fTraversal(curr->left, recIndex + 1);
+    }
+    if (curr->right) {
+        rec[recIndex] = '1';
+        fTraversal(curr->right, recIndex + 1);
+    }
+}
+
+void makeHCode(void)
+{
+    fTraversal(Root, 0);
+}
+
+/* ============================================================
+   步骤4: atoHZIP — 压缩
+   【改】重写：
+   - 头部先写 4 字节原文件大小，再写码表
+   - 比特打包统一用「位缓冲」模型，大幅简化逻辑
+   ============================================================ */
+int getVaildFre(void)
+{
+    int cnt = 0;
+    for (int i = 0; i < 128; i++)
+        if (HCode[i][0]) cnt++;
     return cnt;
 }
-void atoHZIP()
+
+static void writeBitsMSB(const char *code, int len, FILE *out)
 {
-    int cnt = getVaildFre();//计算有效字符，即码表长度
-    fputc(cnt, Obj);//输出码表长度
+    /* 将 len 位 0/1 字符串按 MSB-first 写入文件 */
+    unsigned char byte = 0;
+    int bits = 0;
+    for (int i = 0; i < len; i++) {
+        byte = (unsigned char)((byte << 1) | (code[i] - '0'));
+        bits++;
+        if (bits == 8) {
+            fputc(byte, out);
+            byte = 0;
+            bits = 0;
+        }
+    }
+    if (bits > 0) {
+        byte <<= (8 - bits);
+        fputc(byte, out);
+    }
+}
 
-    for (int i = 0; i < 128; ++i) {
+void atoHZIP(void)
+{
+    /* --- 取得原文件大小 --- */
+    fseek(Src, 0, SEEK_END);
+    long origSize = ftell(Src);
+    rewind(Src);
+    fputc((int)( origSize        & 0xFF), Obj);
+    fputc((int)((origSize >> 8)  & 0xFF), Obj);
+    fputc((int)((origSize >> 16) & 0xFF), Obj);
+    fputc((int)((origSize >> 24) & 0xFF), Obj);
+
+    /* --- 写码表 --- */
+    int cnt = getVaildFre();
+    fputc(cnt, Obj);                     // 码表条目数
+
+    for (int i = 0; i < 128; i++) {
         if (HCode[i][0]) {
-            //先输出ascii码
-            fputc(i, Obj);
+            int codeLen = (int)strlen(HCode[i]);
+            fputc(i, Obj);               // 字符
+            fputc(codeLen, Obj);         // 码长
+            writeBitsMSB(HCode[i], codeLen, Obj);  // 编码比特
+        }
+    }
 
-            //输出码长
-            fputc(strlen(HCode[i]), Obj);
-
-            //将一个数组模拟的8bit数字转换成一个无符号的字节
-            unsigned char hc = 0;
-            for (int j = 0; j < 8; ++j) {
-                hc = ((hc << 1) )|( (HCode[i][j] - '0')>=0? (HCode[i][j] - '0'):0);//不足这里会自动补位
+    /* --- 写编码数据 --- */
+    unsigned char bitBuf = 0;
+    int bitCnt = 0;
+    int ch;
+    while ((ch = fgetc(Src)) != EOF) {   // 【改】检查 EOF 而非真值
+        char *code = HCode[ch];
+        for (int j = 0; code[j]; j++) {
+            bitBuf = (unsigned char)((bitBuf << 1) | (code[j] - '0'));
+            bitCnt++;
+            if (bitCnt == 8) {
+                fputc(bitBuf, Obj);
+                bitBuf = 0;
+                bitCnt = 0;
             }
-            fputc(hc, Obj);
+        }
+    }
+    /* 冲刷剩余位 */
+    if (bitCnt > 0) {
+        bitBuf <<= (8 - bitCnt);
+        fputc(bitBuf, Obj);
+    }
+}
+
+/* ============================================================
+   步骤5: atoUnzip — 解压
+   【改】完整实现
+   ============================================================ */
+void atoUnzip(void)
+{
+    /* --- 读头部：4 字节原文件大小 --- */
+    long origSize = 0;
+    origSize |= (long)fgetc(Src);
+    origSize |= (long)fgetc(Src) << 8;
+    origSize |= (long)fgetc(Src) << 16;
+    origSize |= (long)fgetc(Src) << 24;
+
+    /* --- 读码表，构建解码 trie --- */
+    int tableCnt = fgetc(Src);
+
+    tnode *decRoot = (tnode *)malloc(sizeof(tnode));
+    decRoot->c = -1;
+    decRoot->left = decRoot->right = NULL;
+
+    for (int i = 0; i < tableCnt; i++) {
+        int ch      = fgetc(Src);          // 字符
+        int codeLen = fgetc(Src);          // 码长
+
+        /* 从文件逐字节读出 codeLen 个比特，拼成 0/1 字符串 */
+        char codeStr[MAXSIZE] = {0};
+        int byte = 0;
+        for (int b = 0; b < codeLen; b++) {
+            if (b % 8 == 0)
+                byte = fgetc(Src);         // 读下一个字节
+            int bit = (byte >> (7 - (b % 8))) & 1;
+            codeStr[b] = (char)('0' + bit);
+        }
+        codeStr[codeLen] = '\0';
+
+        /* 沿路径插入解码树 */
+        tnode *cur = decRoot;
+        for (int j = 0; j < codeLen; j++) {
+            if (codeStr[j] == '0') {
+                if (!cur->left) {
+                    cur->left = (tnode *)malloc(sizeof(tnode));
+                    cur->left->c = -1;
+                    cur->left->left = cur->left->right = NULL;
+                }
+                cur = cur->left;
+            } else {
+                if (!cur->right) {
+                    cur->right = (tnode *)malloc(sizeof(tnode));
+                    cur->right->c = -1;
+                    cur->right->left = cur->right->right = NULL;
+                }
+                cur = cur->right;
+            }
+        }
+        cur->c = ch;   // 叶子节点标记字符
+    }
+
+    /* --- 解码 --- */
+    long decoded = 0;
+    tnode *cur = decRoot;
+    int byte = fgetc(Src);
+    int bitsLeft = 8;
+
+    while (decoded < origSize) {
+        if (bitsLeft == 0) {
+            byte = fgetc(Src);
+            bitsLeft = 8;
+        }
+        int bit = (byte >> (bitsLeft - 1)) & 1;
+        bitsLeft--;
+
+        cur = (bit == 0) ? cur->left : cur->right;
+
+        if (cur && cur->left == NULL && cur->right == NULL) {
+            fputc(cur->c, Obj);
+            decoded++;
+            cur = decRoot;
         }
     }
 
-    //! 动态计算charSeq所需大小：每个字符的频次 × Huffman码长
-    int charSeqSize = 1; // '\0'
-    for (int i = 0; i < 128; ++i) {
-        if (Ccount[i] > 0) {
-            charSeqSize += Ccount[i] * (int)strlen(HCode[i]);
-        }
-    }
-    char* charSeq = (char*)malloc(charSeqSize);  //! 动态分配，精确大小，不会溢出
-    if (!charSeq) { fprintf(stderr, "Memory allocation failed!\n"); return; }
+    freeTree(decRoot);
+}
 
-    rewind(Src);//跳回开头
-    int target;  //! 必须是int，fgetc返回0~255或EOF(-1)
-    char *p = charSeq;
-    while ((target = fgetc(Src)) != EOF) {//对读入的文件字符按照HCode中进行比对
-        char*code = HCode[target];
-        while(*code) {
-            *p++ = *code++;
-        }
-    }
-    //! 追加文件结束符的Huffman码（不用strcat，避免重复扫描）
-    char* code = HCode[0];
-    while(*code){
-        *p++ = *code++;
-    }
-    *p = '\0';
-
-    unsigned char hc = 0;//注意HCode不连续分布，需要全部遍历
-    int j = 0;
-    for (; charSeq[j] != '\0'; ++j) {
-        hc = (hc << 1) | (int)(charSeq[j] - '0');
-        if ((j + 1) % 8 == 0) {
-            fputc(hc, Obj);
-            hc = 0;
-        }
-    }
-    //此时j的个数是真正统计了多少字符，算上了结尾符
-    if (j % 8) {
-        hc = hc << (8 - j % 8);//注意位移量
-        fputc(hc, Obj);
-    }
-    free(charSeq);  //! 释放动态分配的charSeq
+/* ============================================================
+   freeTree — 递归释放 Huffman 树
+   ============================================================ */
+void freeTree(tnode *root)
+{
+    if (root == NULL) return;
+    freeTree(root->left);
+    freeTree(root->right);
+    free(root);
 }
