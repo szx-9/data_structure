@@ -379,19 +379,83 @@ void atoHZIP(void)
         - 从根节点出发，逐位读（MSB 优先）
         - 到达叶 → 遇到 0 号字符（EOF）停止，否则 fputc(ch, Obj)
         - 注意处理 file end 保护
-   ============================================================ */
+============================================================ */
+int codePath[32];
+int codePIndex = 0;
+int currCh = 0;
+void reverseCodePath(int len)
+{
+    for (int l = 0, r = len - 1; l <= r; l++, r--)
+    {
+        int tmp = codePath[r];
+        codePath[r] = codePath[l];
+        codePath[l] = tmp;
+    }
+}
+void tranIntToArray(unsigned int code_int, int code_len)
+{
+    for (int i = 0; i < code_len; ++i)
+    {
+        codePath[i] = code_int & 1;
+        code_int >>= 1;
+    }
+    reverseCodePath(code_len);
+}
+void rebuildTree(int cPIndex, int len, tnode *cur)
+{
+    // 根据数组在cur游标树结点上重建
+    if (cPIndex >= len)
+        return;
+    if (!codePath[cPIndex])
+    {
+        // left zero
+        if (cur->l)
+        {
+            rebuildTree(cPIndex + 1, len, cur->l);
+            return;
+        }
+        cur->l = buildTnode(cPIndex + 1 == len ? currCh : 0, 0);
+        rebuildTree(cPIndex + 1, len, cur->l);
+        return;
+    }
+    if (cur->r)
+    {
+        rebuildTree(cPIndex + 1, len, cur->r);
+        return;
+    }
+    cur->r = buildTnode(cPIndex + 1 == len ? currCh : 0, 0);
+    rebuildTree(cPIndex + 1, len, cur->r);
+    return;
+}
+
 void atoUnzip(void)
 {
-    // TODO: 全部由你实现
-    // 提示结构：
-    //   1. 初始化解码树：node_cnt=1, lch[0]=rch[0]=-1（0 号节点=根）
-    //   2. 读码表，沿路径建树
-    //   3. 逐位读取 Src，在解码树上走，叶节点输出
-    //   4. 遇到 ch=0 的叶节点 → 停止
     rewind(Src);
-    int lenTable = fgetc(Src);
-    for (int i = 0; i < lenTable;++i){
-        int ch_val = fgetc(Src);
+    tnode dummy;
+    dummy.l = dummy.r = NULL;
+    dummy.weight = 0;
+    dummy.ch_val = -1;
 
+    int lenTable = fgetc(Src);
+    for (int i = 0; i < lenTable; ++i)
+    {
+        int ch_val = fgetc(Src);
+        int code_len = fgetc(Src);
+        unsigned int code_int = 0;
+        for (int i = 0; i < (code_len / 8 + 1); ++i)
+        {
+            code_int = code_int << 8 | fget(Src);
+        }
+        code_int = code_int >> 8 - (code_len % 8);
+        // 建树
+        tranIntToArray(code_int, code_len);
+        currCh = code_int;
+        rebuildTree(0, code_len, &dummy);
+    }
+
+    int ch = 0;
+    while (1)
+    {
+        ch = fgetc(Src);
     }
 }
