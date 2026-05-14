@@ -1,121 +1,93 @@
 /* ============================================================
-   【总改】全部重写，核心变更：
-   1. 删除 node 链表包装，改用数组构建 Huffman 树
-   2. atoHZIP: 头部存入原文件大小(4字节)，重写比特打包逻辑
-   3. atoUnzip: 完整实现解压
-   4. 修复 createHTree 中 node/tnode 类型混用、->right/->next 混用等 bug
-   5. 修复 atoHZIP 中 fputc(byte, Obj) 写成 fputc(byte 下标) 的 bug
-   6. 修复 while((rec=fgetc)) 在 rec==0 时误退出的 bug
+   Huffman 压缩/解压 — hzip.c
+   框架重构：数组法 Huffman 树 + 流式位输出
+   TODO 标记的函数由你来补全实现
    ============================================================ */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
-#define MAXSIZE 256   // 编码最大长度（Huffman 树最深 127，256 足够）
-#define MAXNAME 200
+/* ========== 常量 ========== */
+#define MAX_CHAR 128          // ASCII 0~127，考虑退化成链表，ascii范围内最大安全数值
+#define MAX_NODE 256          // 总结点数 ≤ 2*128-1 = 255
 
 enum {
-    IS_ZIP = 1,
+    IS_ZIP   = 1,
     IS_UNZIP = 2,
-    WRONG = 0,
-    IS_FORMAT = 1,   // 保留，供 printError 使用
-    IS_EXTEN = 0      // 保留，供 printError 使用
+    WRONG    = 0,
+    IS_FORMAT = 1,
+    IS_EXTEN  = 0
 };
 
-/* ---------- 数据结构 ---------- */
-typedef struct tnode {
-    int c;                  // 字符值，内部节点为 -1
-    int weight;             // 权重（频次）
-    struct tnode *left, *right;
-} tnode;
+/* ========== Huffman 树（数组表示） ========== */
+int  lch[MAX_NODE], rch[MAX_NODE];   // 左右孩子索引，-1 = 无
+int  freq[MAX_NODE];                 // 节点权重
+int  ch_val[MAX_NODE];               // 叶节点字符（内部节点无效）
+int  node_cnt;                       // 已分配节点数
 
-/* 【删】移除了 node 结构体（链表包装），改为在 createHTree 中用 tnode* 数组 */
+/* ========== 编码表 ========== */
+unsigned char code_bits[MAX_CHAR][16];  // 每个字符的 Huffman 编码（位数组，高位在前）
+int code_len[MAX_CHAR];                 // 编码长度（bit 数）
 
-int Ccount[128] = {0};                  // 字符频次
-tnode *Root = NULL;                     // Huffman 树根
-char HCode[128][MAXSIZE] = {{0}};       // Huffman 编码表（字符串）
+/* ========== 字符频率 ========== */
+int freq_all[MAX_CHAR];   // [0]=EOF 哨兵，[32..126]=可见字符
+
+/* ========== 写缓冲区 ========== */
+unsigned char wbuf;       // 1 字节缓冲区
+int wbits_left;           // 缓冲区剩余位数（8→0）
+
+/* ========== 全局文件指针 ========== */
 FILE *Src, *Obj;
 
-/* ---------- 函数声明 ---------- */
+/* ========== 函数声明 ========== */
 void statCount(void);
-tnode *buildUnitTnode(tnode *l, tnode *r);   // 【改】返回 tnode*（原为 node*）
-void createHTree(void);                       // 【改】用数组而非链表
-int  isLeafNode(tnode *cur);
-void fTraversal(tnode *curr, int recIndex);
-void makeHCode(void);
-void atoHZIP(void);                           // 【改】重写比特打包
-void atoUnzip(void);                          // 【改】完整实现
-void printError(int type);
+int  buildHuffmanTree(void);                          // TODO：构建 Huffman 树，返回根节点索引
+void genHuffmanCodes(int root, int depth,
+                     unsigned char *path_bits);       // TODO：递归遍历树，生成编码
+void makeHCode(int root);
+void write_bit(FILE *f, int bit);
+void flush_bits(FILE *f);
+void write_code(FILE *f, int c);                      // TODO：写入字符 c 的完整编码
+void atoHZIP(void);                                   // TODO：压缩
+void atoUnzip(void);                                  // TODO：解压
 int  parseCommand(int argc, char *argv[], char **filename);
-void freeTree(tnode *root);
+void printError(int type);
 void dealFilename(char **filename, int type);
-int  getVaildFre(void);
 
 /* ============================================================
-   main
+   main：流程纲要
    ============================================================ */
 int main(int argc, char *argv[])
 {
     char *filename = NULL;
     int type = parseCommand(argc, argv, &filename);
-    if (!type)
-        return 0;
+    if (!type) return 0;
 
     Src = fopen(filename, "rb");
-    if (!Src) {
-        fprintf(stderr, "Cannot open input file!\n");
-        return 1;
-    }
+    if (!Src) { fprintf(stderr, "Cannot open input file!\n"); return 1; }
     dealFilename(&filename, type);
     Obj = fopen(filename, "wb");
-    if (!Obj) {
-        fprintf(stderr, "Cannot open output file!\n");
-        fclose(Src);
-        return 1;
-    }
+    if (!Obj) { fprintf(stderr, "Cannot open output file!\n"); fclose(Src); return 1; }
 
     if (type == IS_ZIP) {
-        statCount();     // 【改】只在压缩时统计频次
-        createHTree();   // 【改】只在压缩时建树
-        makeHCode();     // 【改】只在压缩时生成编码
-        atoHZIP();
+        /* ---- 压缩流水线 ---- */
+        statCount();                              // ① 统计频率（保留你的实现）
+        int root = buildHuffmanTree();            // ② TODO：构建树
+        makeHCode(root);                          // ③ 生成编码（调用你的 genHuffmanCodes）
+        atoHZIP();                                // ④ TODO：写码表 + 编码压缩
     } else {
-        atoUnzip();      // 解压：直接从文件头读码表
+        /* ---- 解压流水线 ---- */
+        atoUnzip();                               // TODO：读码表 + 建树 + 解码
     }
 
-    freeTree(Root);
-    free(filename);
     fclose(Src);
     fclose(Obj);
+    free(filename);
     return 0;
 }
 
 /* ============================================================
-   dealFilename — 替换扩展名
-   ============================================================ */
-void dealFilename(char **filename, int type)
-{
-    char *ext = strrchr(*filename, '.');
-    if (!ext) {
-        printf("ERROR_DEALNAME\n");
-        return;
-    }
-    char *nameBuf = (char *)malloc(MAXNAME);
-    char *cur = *filename;
-    int idx = 0;
-    while (cur != ext)
-        nameBuf[idx++] = *cur++;
-    nameBuf[idx] = '\0';
-    if (type == IS_ZIP)
-        strcat(nameBuf, ".hzip");
-    else
-        strcat(nameBuf, ".txt");
-
-    *filename = nameBuf;   // 【注】原 argv 指向的内容不再使用，新内存由 caller free
-}
-
-/* ============================================================
-   printError / parseCommand
+   parseCommand / printError / dealFilename（保留你原有实现，微调）
    ============================================================ */
 void printError(int type)
 {
@@ -127,27 +99,16 @@ void printError(int type)
 
 int parseCommand(int argc, char *argv[], char **filename)
 {
-    if (argc == 1 || argc > 3) {
-        printError(IS_FORMAT);
-        return WRONG;
-    }
-    /* -u 解压模式: hzip -u xxx.hzip */
+    if (argc == 1 || argc > 3) { printError(IS_FORMAT); return WRONG; }
     if (!strcmp(argv[1], "-u") && argc == 3) {
         char *ext = strrchr(argv[2], '.');
-        if (!ext || strcmp(ext, ".hzip")) {
-            printError(IS_EXTEN);
-            return WRONG;
-        }
+        if (!ext || strcmp(ext, ".hzip")) { printError(IS_EXTEN); return WRONG; }
         *filename = argv[2];
         return IS_UNZIP;
     }
-    /* 压缩模式: hzip xxx.txt */
     if (argc == 2 && strstr(argv[1], ".")) {
         char *ext = strrchr(argv[1], '.');
-        if (!ext || strcmp(ext, ".txt")) {
-            printError(IS_EXTEN);
-            return WRONG;
-        }
+        if (!ext || strcmp(ext, ".txt")) { printError(IS_EXTEN); return WRONG; }
         *filename = argv[1];
         return IS_ZIP;
     }
@@ -155,295 +116,199 @@ int parseCommand(int argc, char *argv[], char **filename)
     return WRONG;
 }
 
+void dealFilename(char **filename, int type)
+{
+    char *ext = strrchr(*filename, '.');
+    if (!ext) { printf("ERROR_DEALNAME\n"); return; }
+    if (type == IS_ZIP && strcmp(ext, ".txt"))   { printError(IS_EXTEN); return; }
+    if (type == IS_UNZIP && strcmp(ext, ".hzip")) { printError(IS_EXTEN); return; }
+
+    char *nameBuf = (char *)malloc(200);
+    char *cur = *filename;
+    int idx = 0;
+    while (cur != ext) nameBuf[idx++] = *cur++;
+    nameBuf[idx] = '\0';
+    strcat(nameBuf, (type == IS_ZIP) ? ".hzip" : ".txt");
+    *filename = nameBuf;
+}
+
 /* ============================================================
-   步骤1: statCount — 统计字符频次
+   statCount（保留你原有实现）
+   题目要求：EOF 哨兵 count=1，参与编码
    ============================================================ */
 void statCount(void)
 {
     int ch;
-    while ((ch = getc(Src)) != EOF)
-        Ccount[ch]++;
-    /* 【改】删除了 Ccount[0]=1（不再需要哨兵，文件头存有原文件大小） */
+    freq_all[0] = 1;           // EOF 哨兵
+    while ((ch = fgetc(Src)) != EOF)
+        freq_all[ch]++;
 }
 
 /* ============================================================
-   步骤2: createHTree — 用数组构建 Huffman 树
-   【改】不再使用 node 链表 + insertSort，改为：
-   1) 收集所有叶节点到 tnode* 数组
-   2) 每轮线性扫描找两个最小权重节点
-   3) 合并后放回数组
-   时间复杂度 O(m²)，m ≤ 128，完全足够
+   buildHuffmanTree — TODO
+   ─────────────────────────────────────────────
+   用数组法构建 Huffman 树，返回根节点索引。
+   提示步骤：
+     1. 遍历 freq_all[0..127]，为 freq>0 的字符创建叶节点
+     2. 用插入排序建一个 list[] 数组（存节点下标），按 (freq, ch) 升序
+     3. while (list_size > 1):
+          - 取 list[0], list[1] 作为左右孩子
+          - 创建新内部节点：freq=两者之和, lch=左, rch=右
+          - 删除前两个元素，将新节点插入到正确位置（稳定）
+     4. 返回 list[0]
+   注意：
+     - 插入排序的稳定性保证与参考 exe 逐字节一致
+     - 如果只有一个叶节点，需要特殊处理（建一个哑父节点，给 0 编码）
+     - 节点总数 ≤ node_cnt（初始 = 叶节点数）
    ============================================================ */
-tnode *buildUnitTnode(tnode *l, tnode *r)   // 【改】返回 tnode*（原为 node*）
+int buildHuffmanTree(void)
 {
-    tnode *father = (tnode *)malloc(sizeof(tnode));
-    father->left  = l;
-    father->right = r;
-    father->c     = -1;
-    father->weight = l->weight + r->weight;
-    return father;
-}
+    int list[MAX_NODE];
+    int list_size = 0;
 
-void createHTree(void)
-{
-    /* 1. 收集所有出现过的字符 → 叶节点数组 */
-    tnode *nodes[128];
-    int n = 0;
-    for (int i = 0; i < 128; i++) {
-        if (Ccount[i] > 0) {
-            tnode *leaf = (tnode *)malloc(sizeof(tnode));
-            leaf->c      = i;
-            leaf->weight = Ccount[i];
-            leaf->left = leaf->right = NULL;
-            nodes[n++] = leaf;
+    /* 1. 创建叶节点 */
+    node_cnt = 0;
+    for (int i = 0; i < MAX_CHAR; i++) {
+        if (freq_all[i] > 0) {
+            // TODO: 分配新节点，设置 lch/rch = -1, ch_val, freq
+            // TODO: 把节点下标加入 list
         }
     }
 
-    /* 空文件保护：手动造一个哨兵节点，避免 Root==NULL */
-    if (n == 0) {
-        tnode *dummy = (tnode *)malloc(sizeof(tnode));
-        dummy->c = -1;
-        dummy->weight = 0;
-        dummy->left = dummy->right = NULL;
-        Root = dummy;
+    /* 2. 初始排序（升序：freq 小的在前；相同按 ch_val 小的在前） */
+    // TODO: 插入排序（或其他稳定排序）list
+
+    /* 3. 主循环：合并两个最小节点 */
+    // TODO: while (list_size > 1) { ... }
+
+    /* 4. 单字符特判 */
+    // TODO: 如果初始只有 1 个叶节点
+
+    return list[0];  // 根节点下标
+}
+
+/* ============================================================
+   genHuffmanCodes — TODO
+   ─────────────────────────────────────────────
+   递归遍历树，为每个叶节点生成 Huffman 编码（存到 code_bits / code_len）。
+   参数：
+     - root:   当前节点下标
+     - depth:  当前深度（= 已生成的编码位数）
+     - path_bits: 路径位数组（调用方分配 unsigned char path[16]）
+   规则：左走写 0，右走写 1，到达叶节点时 copy 到全局表。
+   ============================================================ */
+void genHuffmanCodes(int root, int depth, unsigned char *path_bits)
+{
+    if (lch[root] == -1 && rch[root] == -1) {
+        // TODO: 叶节点：将 path_bits 中 depth 位拷贝到 code_bits[ch_val[root]]
+        //       code_len[ch_val[root]] = depth;
+        //       注意：depth=0 时（单字符），编码长度=1，编码='0'
         return;
     }
-
-    /* 2. 迭代合并最小两节点 */
-    while (n > 1) {
-        /* 找两个最小权重的下标 */
-        int m1 = 0, m2 = 1;
-        if (nodes[m1]->weight > nodes[m2]->weight) {
-            int t = m1; m1 = m2; m2 = t;
-        }
-        for (int i = 2; i < n; i++) {
-            if (nodes[i]->weight < nodes[m1]->weight) {
-                m2 = m1;
-                m1 = i;
-            } else if (nodes[i]->weight < nodes[m2]->weight) {
-                m2 = i;
-            }
-        }
-
-        /* 合并 m1, m2 → 父节点 */
-        tnode *parent = buildUnitTnode(nodes[m1], nodes[m2]);
-
-        /* parent 放回 m1 位置，m2 用末尾元素覆盖，n-- */
-        nodes[m1] = parent;
-        nodes[m2] = nodes[n - 1];
-        n--;
-    }
-    Root = nodes[0];
+    // TODO: 左子树 — path_bits[depth] 位写 0，递归
+    // TODO: 右子树 — path_bits[depth] 位写 1，递归
 }
 
 /* ============================================================
-   步骤3: makeHCode — 前序遍历生成 Huffman 编码
+   makeHCode：编码生成入口
    ============================================================ */
-int isLeafNode(tnode *cur)
+void makeHCode(int root)
 {
-    return (cur->left == NULL && cur->right == NULL);
-}
-
-char rec[MAXSIZE];   // 遍历路径缓冲区
-
-void fTraversal(tnode *curr, int recIndex)
-{
-    if (curr == NULL) return;
-
-    if (isLeafNode(curr)) {
-        rec[recIndex] = '\0';
-        if (recIndex == 0)          // 单节点树：编码为 "0"
-            strcpy(HCode[curr->c], "0");
-        else
-            strcpy(HCode[curr->c], rec);
-        return;
-    }
-    if (curr->left) {
-        rec[recIndex] = '0';
-        fTraversal(curr->left, recIndex + 1);
-    }
-    if (curr->right) {
-        rec[recIndex] = '1';
-        fTraversal(curr->right, recIndex + 1);
-    }
-}
-
-void makeHCode(void)
-{
-    fTraversal(Root, 0);
+    unsigned char path[16] = {0};
+    genHuffmanCodes(root, 0, path);
 }
 
 /* ============================================================
-   步骤4: atoHZIP — 压缩
-   【改】重写：
-   - 头部先写 4 字节原文件大小，再写码表
-   - 比特打包统一用「位缓冲」模型，大幅简化逻辑
+   write_bit / flush_bits：流式位输出（已实现，直接使用）
+   ─────────────────────────────────────────────
+   write_bit: 向文件输出 1 bit（高位在前）
+   flush_bits: 将缓冲区剩余位补 0 写出
+   用法：
+     write_bit(f, 1);          // 输出 '1'
+     write_code(f, ascii);     // 输出某字符的完整编码（你需要实现）
+     flush_bits(f);            // 结束时冲刷
    ============================================================ */
-int getVaildFre(void)
+void write_bit(FILE *f, int bit)
 {
-    int cnt = 0;
-    for (int i = 0; i < 128; i++)
-        if (HCode[i][0]) cnt++;
-    return cnt;
-}
-
-static void writeBitsMSB(const char *code, int len, FILE *out)
-{
-    /* 将 len 位 0/1 字符串按 MSB-first 写入文件 */
-    unsigned char byte = 0;
-    int bits = 0;
-    for (int i = 0; i < len; i++) {
-        byte = (unsigned char)((byte << 1) | (code[i] - '0'));
-        bits++;
-        if (bits == 8) {
-            fputc(byte, out);
-            byte = 0;
-            bits = 0;
-        }
-    }
-    if (bits > 0) {
-        byte <<= (8 - bits);
-        fputc(byte, out);
+    wbuf = (unsigned char)((wbuf << 1) | (bit & 1));
+    wbits_left--;
+    if (wbits_left == 0) {
+        fputc(wbuf, f);
+        wbuf = 0;
+        wbits_left = 8;
     }
 }
 
+void flush_bits(FILE *f)
+{
+    if (wbits_left < 8) {
+        wbuf = (unsigned char)(wbuf << wbits_left);   // 低位补 0
+        fputc(wbuf, f);
+        wbuf = 0;
+        wbits_left = 8;
+    }
+}
+
+/* ============================================================
+   write_code — TODO
+   ─────────────────────────────────────────────
+   将字符 c 对应的 Huffman 编码按位写入文件。
+   直接调用 write_bit() 循环 code_len[c] 次即可。
+   ============================================================ */
+void write_code(FILE *f, int c)
+{
+    // TODO: for i in 0..code_len[c]-1:
+    //         提取 code_bits[c] 的第 i 位（高位在前）
+    //         调用 write_bit(f, bit)
+}
+
+/* ============================================================
+   atoHZIP — TODO
+   ─────────────────────────────────────────────
+   压缩输出，分为两步：
+     1. 写码表：
+        - 1 字节：tblCnt（码表条目数，freq_all[i]>0 的个数）
+        - 对每个 freq_all[i]>0 的字符：
+            fputc(i)                          // ASCII 码
+            fputc(code_len[i])                // 码长
+            write_code(Obj, i)                // 编码位串
+            flush_bits(Obj)                   // 补齐整字节
+     2. 写压缩数据：
+        - rewind(Src)
+        - 逐字符读 Src，write_code(Obj, ch)
+        - write_code(Obj, 0)                  // EOF 哨兵
+        - flush_bits(Obj)                     // 最后冲刷
+   ============================================================ */
 void atoHZIP(void)
 {
-    /* --- 取得原文件大小 --- */
-    fseek(Src, 0, SEEK_END);
-    long origSize = ftell(Src);
-    rewind(Src);
-    fputc((int)( origSize        & 0xFF), Obj);
-    fputc((int)((origSize >> 8)  & 0xFF), Obj);
-    fputc((int)((origSize >> 16) & 0xFF), Obj);
-    fputc((int)((origSize >> 24) & 0xFF), Obj);
+    /* 1. 写码表 */
+    // TODO: 统计 tblCnt，写入 fputc(tblCnt, Obj)
+    // TODO: 遍历 0..127，对 freq_all[i]>0 的写 (i, code_len[i], code_bits[i])
 
-    /* --- 写码表 --- */
-    int cnt = getVaildFre();
-    fputc(cnt, Obj);                     // 码表条目数
-
-    for (int i = 0; i < 128; i++) {
-        if (HCode[i][0]) {
-            int codeLen = (int)strlen(HCode[i]);
-            fputc(i, Obj);               // 字符
-            fputc(codeLen, Obj);         // 码长
-            writeBitsMSB(HCode[i], codeLen, Obj);  // 编码比特
-        }
-    }
-
-    /* --- 写编码数据 --- */
-    unsigned char bitBuf = 0;
-    int bitCnt = 0;
-    int ch;
-    while ((ch = fgetc(Src)) != EOF) {   // 【改】检查 EOF 而非真值
-        char *code = HCode[ch];
-        for (int j = 0; code[j]; j++) {
-            bitBuf = (unsigned char)((bitBuf << 1) | (code[j] - '0'));
-            bitCnt++;
-            if (bitCnt == 8) {
-                fputc(bitBuf, Obj);
-                bitBuf = 0;
-                bitCnt = 0;
-            }
-        }
-    }
-    /* 冲刷剩余位 */
-    if (bitCnt > 0) {
-        bitBuf <<= (8 - bitCnt);
-        fputc(bitBuf, Obj);
-    }
+    /* 2. 写压缩数据 */
+    // TODO: rewind(Src)，逐字符 write_code，最后写哨兵+flush
 }
 
 /* ============================================================
-   步骤5: atoUnzip — 解压
-   【改】完整实现
+   atoUnzip — TODO
+   ─────────────────────────────────────────────
+   解压，分为两步：
+     1. 读码表 → 重建解码 Huffman 树（数组法）：
+        - 读 1 字节 tblCnt
+        - 对每条目：读 ascii, codeLen, code_bits 字节串
+        - 沿路径插入节点（0 走左，1 走右）
+        - 叶节点设置 ch_val = ascii
+     2. 解码数据：
+        - 从根节点出发，逐位读（MSB 优先）
+        - 到达叶 → 遇到 0 号字符（EOF）停止，否则 fputc(ch, Obj)
+        - 注意处理 file end 保护
    ============================================================ */
 void atoUnzip(void)
 {
-    /* --- 读头部：4 字节原文件大小 --- */
-    long origSize = 0;
-    origSize |= (long)fgetc(Src);
-    origSize |= (long)fgetc(Src) << 8;
-    origSize |= (long)fgetc(Src) << 16;
-    origSize |= (long)fgetc(Src) << 24;
-
-    /* --- 读码表，构建解码 trie --- */
-    int tableCnt = fgetc(Src);
-
-    tnode *decRoot = (tnode *)malloc(sizeof(tnode));
-    decRoot->c = -1;
-    decRoot->left = decRoot->right = NULL;
-
-    for (int i = 0; i < tableCnt; i++) {
-        int ch      = fgetc(Src);          // 字符
-        int codeLen = fgetc(Src);          // 码长
-
-        /* 从文件逐字节读出 codeLen 个比特，拼成 0/1 字符串 */
-        char codeStr[MAXSIZE] = {0};
-        int byte = 0;
-        for (int b = 0; b < codeLen; b++) {
-            if (b % 8 == 0)
-                byte = fgetc(Src);         // 读下一个字节
-            int bit = (byte >> (7 - (b % 8))) & 1;
-            codeStr[b] = (char)('0' + bit);
-        }
-        codeStr[codeLen] = '\0';
-
-        /* 沿路径插入解码树 */
-        tnode *cur = decRoot;
-        for (int j = 0; j < codeLen; j++) {
-            if (codeStr[j] == '0') {
-                if (!cur->left) {
-                    cur->left = (tnode *)malloc(sizeof(tnode));
-                    cur->left->c = -1;
-                    cur->left->left = cur->left->right = NULL;
-                }
-                cur = cur->left;
-            } else {
-                if (!cur->right) {
-                    cur->right = (tnode *)malloc(sizeof(tnode));
-                    cur->right->c = -1;
-                    cur->right->left = cur->right->right = NULL;
-                }
-                cur = cur->right;
-            }
-        }
-        cur->c = ch;   // 叶子节点标记字符
-    }
-
-    /* --- 解码 --- */
-    long decoded = 0;
-    tnode *cur = decRoot;
-    int byte = fgetc(Src);
-    int bitsLeft = 8;
-
-    while (decoded < origSize) {
-        if (bitsLeft == 0) {
-            byte = fgetc(Src);
-            bitsLeft = 8;
-        }
-        int bit = (byte >> (bitsLeft - 1)) & 1;
-        bitsLeft--;
-
-        cur = (bit == 0) ? cur->left : cur->right;
-
-        if (cur && cur->left == NULL && cur->right == NULL) {
-            fputc(cur->c, Obj);
-            decoded++;
-            cur = decRoot;
-        }
-    }
-
-    freeTree(decRoot);
-}
-
-/* ============================================================
-   freeTree — 递归释放 Huffman 树
-   ============================================================ */
-void freeTree(tnode *root)
-{
-    if (root == NULL) return;
-    freeTree(root->left);
-    freeTree(root->right);
-    free(root);
+    // TODO: 全部由你实现
+    // 提示结构：
+    //   1. 初始化解码树：node_cnt=1, lch[0]=rch[0]=-1（0 号节点=根）
+    //   2. 读码表，沿路径建树
+    //   3. 逐位读取 Src，在解码树上走，叶节点输出
+    //   4. 遇到 ch=0 的叶节点 → 停止
 }
