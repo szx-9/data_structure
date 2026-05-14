@@ -1,8 +1,3 @@
-/* ============================================================
-   Huffman 压缩/解压 — hzip.c
-   框架重构：数组法 Huffman 树 + 流式位输出
-   TODO 标记的函数由你来补全实现
-   ============================================================ */
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -64,20 +59,12 @@ void atoUnzip(void); // TODO：解压
 int parseCommand(int argc, char *argv[], char **filename);
 void printError(int type);
 void dealFilename(char **filename, int type);
-
 int isInsert(tnode *cur, tnode *in);
-
 void insertTnode(node *dummy, node *in);
-
 tnode *buildTnode(int ch, int weight);
-
 node *buildNode(tnode *tPtr);
-
 node *buildUnitNode(node *l, node *r);
 
-/* ============================================================
-   main：流程纲要
-   ============================================================ */
 int main(int argc, char *argv[])
 {
     char *filename = NULL;
@@ -184,24 +171,6 @@ void statCount(void)
     while ((ch = fgetc(Src)) != EOF)
         freq_all[ch]++;
 }
-
-/* ============================================================
-   buildHuffmanTree — TODO
-   ─────────────────────────────────────────────
-   用数组法构建 Huffman 树，返回根节点索引。
-   提示步骤：
-     1. 遍历 freq_all[0..127]，为 freq>0 的字符创建叶节点
-     2. 用插入排序建一个 list[] 数组（存节点下标），按 (freq, ch) 升序
-     3. while (list_size > 1):
-          - 取 list[0], list[1] 作为左右孩子
-          - 创建新内部节点：freq=两者之和, lch=左, rch=右
-          - 删除前两个元素，将新节点插入到正确位置（稳定）
-     4. 返回 list[0]
-   注意：
-     - 插入排序的稳定性保证与参考 exe 逐字节一致
-     - 如果只有一个叶节点，需要特殊处理（建一个哑父节点，给 0 编码）
-     - 节点总数 ≤ node_cnt（初始 = 叶节点数）
-============================================================ */
 int isInsert(tnode *cur, tnode *in) // 判断是否插入结点
 {
     // 判断 in是否插入到游标结点前(传入对应的tnode)
@@ -326,9 +295,6 @@ void makeHCode()
     genHuffmanCodes(Root, 0);
 }
 
-/* ============================================================
- */
-
 void write_code(char ch, int type)
 {
     // ch是当前从FILE中读取的字符
@@ -422,4 +388,10 @@ void atoUnzip(void)
     //   2. 读码表，沿路径建树
     //   3. 逐位读取 Src，在解码树上走，叶节点输出
     //   4. 遇到 ch=0 的叶节点 → 停止
+    rewind(Src);
+    int lenTable = fgetc(Src);
+    for (int i = 0; i < lenTable;++i){
+        int ch_val = fgetc(Src);
+
+    }
 }
