@@ -94,7 +94,7 @@ int main(int argc, char *argv[])
     fclose(Obj);
     return 0;
 }
-void printError(int type)
+void printError(int type) // 打印命令行错误信息
 {
     if (type == IS_FORMAT)
         printf("Usage: hzip.exe [-u] <filename>\n");
@@ -102,7 +102,7 @@ void printError(int type)
         printf("File extension error!\n");
 }
 
-int parseCommand(int argc, char *argv[], char **filename)
+int parseCommand(int argc, char *argv[], char **filename) // 解析命令行指令并输出文件名
 {
     if (argc == 1 || argc > 3)
     {
@@ -135,7 +135,7 @@ int parseCommand(int argc, char *argv[], char **filename)
     return WRONG;
 }
 
-void dealFilename(char **filename, int type)
+void dealFilename(char **filename, int type) // 再处理文件名
 {
     char *ext = strrchr(*filename, '.');
     if (!ext)
@@ -164,7 +164,7 @@ void dealFilename(char **filename, int type)
     *filename = nameBuf;
 }
 
-void statCount(void)
+void statCount(void) // 统计字符
 {
     int ch;
     freq_all[0] = 1; // EOF 哨兵
@@ -222,7 +222,7 @@ node *buildNode(tnode *tPtr)
     newN->tnodePtr = tPtr;
     return newN;
 }
-node *buildUnitNode(node *l, node *r)
+node *buildUnitNode(node *l, node *r) // 创建huffman树中的父节点
 {
     // front used for left child
     l->next = r->next = NULL;
@@ -234,7 +234,7 @@ node *buildUnitNode(node *l, node *r)
     return buildNode(father);
 }
 
-void buildHuffmanTree(void)
+void buildHuffmanTree(void) // 创建huffman树
 {
     node dummy; // 栈上哑结点
     dummy.tnodePtr = NULL;
@@ -263,7 +263,7 @@ void buildHuffmanTree(void)
 }
 
 char path[MAX_CHAR];
-void genHuffmanCodes(tnode *root, int depth)
+void genHuffmanCodes(tnode *root, int depth) // recursion得到所有huffman编码
 {
     // 深度从零开始，进行递归
     if (root->l == NULL && root->r == NULL)
@@ -295,7 +295,7 @@ void makeHCode()
     genHuffmanCodes(Root, 0);
 }
 
-void write_code(char ch, int type)
+void write_code(char ch, int type) // 根据type，输出一个字节的huffman码（缓冲区状态在 全局不需要维护）
 {
     // ch是当前从FILE中读取的字符
     // 打印码表：每次都要输出完整字节
@@ -327,7 +327,7 @@ void write_code(char ch, int type)
     }
 }
 
-void atoHZIP(void)
+void atoHZIP(void) // 压缩，利用write_code进行输出即可
 {
     int lenTable = 0;
     for (int i = 0; i < MAX_CHAR; ++i)
@@ -340,9 +340,7 @@ void atoHZIP(void)
     for (int i = 0; i < MAX_CHAR; ++i)
     {
         if (freq_all[i])
-        {
             write_code(i, IS_TABLE);
-        }
     }
 
     rewind(Src); // 回跳原点,打印原文
@@ -366,21 +364,7 @@ void atoHZIP(void)
     // 打印原文
 }
 
-/* ============================================================
-   atoUnzip — TODO
-   ─────────────────────────────────────────────
-   解压，分为两步：
-     1. 读码表 → 重建解码 Huffman 树（数组法）：
-        - 读 1 字节 tblCnt
-        - 对每条目：读 ascii, codeLen, code_bits 字节串
-        - 沿路径插入节点（0 走左，1 走右）
-        - 叶节点设置 ch_val = ascii
-     2. 解码数据：
-        - 从根节点出发，逐位读（MSB 优先）
-        - 到达叶 → 遇到 0 号字符（EOF）停止，否则 fputc(ch, Obj)
-        - 注意处理 file end 保护
-============================================================ */
-int codePath[32];
+int codePath[32]; // 存储码表中的编码
 int codePIndex = 0;
 int currCh = 0;
 void reverseCodePath(int len)
@@ -392,7 +376,7 @@ void reverseCodePath(int len)
         codePath[l] = tmp;
     }
 }
-void tranIntToArray(unsigned int code_int, int code_len)
+void tranIntToArray(unsigned int code_int, int code_len)//将int编码转换成数组
 {
     for (int i = 0; i < code_len; ++i)
     {
@@ -401,7 +385,7 @@ void tranIntToArray(unsigned int code_int, int code_len)
     }
     reverseCodePath(code_len);
 }
-void rebuildTree(int cPIndex, int len, tnode *cur)
+void rebuildTree(int cPIndex, int len, tnode *cur)//根据编码路径重建huffman树
 {
     // 根据数组在cur游标树结点上重建
     if (cPIndex >= len)
@@ -431,7 +415,7 @@ void rebuildTree(int cPIndex, int len, tnode *cur)
 void atoUnzip(void)
 {
     rewind(Src);
-    tnode dummy;
+    tnode dummy; //
     dummy.l = dummy.r = NULL;
     dummy.weight = 0;
     dummy.ch_val = -1;
@@ -439,14 +423,14 @@ void atoUnzip(void)
     int lenTable = fgetc(Src);
     for (int i = 0; i < lenTable; ++i)
     {
-        int ch_val = fgetc(Src);
-        int code_len = fgetc(Src);
-        unsigned int code_int = 0;
+        int ch_val = fgetc(Src);   // key
+        int code_len = fgetc(Src); // 码长
+        unsigned int code_int = 0; // 存储编码为int：码表是整个字节存储
         for (int i = 0; i < (code_len / 8 + 1); ++i)
         {
-            code_int = code_int << 8 | fget(Src);
+            code_int = code_int << 8 | fgetc(Src);
         }
-        code_int = code_int >> 8 - (code_len % 8);
+        code_int = code_int >> (8 - (code_len % 8)); // 无符号右移
         // 建树
         tranIntToArray(code_int, code_len);
         currCh = code_int;
