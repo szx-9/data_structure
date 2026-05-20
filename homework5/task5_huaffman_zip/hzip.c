@@ -58,7 +58,7 @@ void atoHZIP(void); // TODO：压缩
 void reverseCodePath(int len);
 void tranIntToArray(unsigned int code_int, int code_len);
 void rebuildTree(int cPIndex, int len, tnode *cur);
-int dealByte(int codePath[], tnode *cur);
+int dealByte(int codePath[]);
 void atoUnzip(void); // TODO：解压
 int parseCommand(int argc, char *argv[], char **filename);
 void printError(int type);
@@ -68,38 +68,82 @@ void insertTnode(node *dummy, node *in);
 tnode *buildTnode(int ch, int weight);
 node *buildNode(tnode *tPtr);
 node *buildUnitNode(node *l, node *r);
+void viz_tree(tnode *root);
+void viz_dot(tnode *root, const char *filename);
 
-char* tree_to_json(tnode* node) {
-    if (node == NULL) {
-        return strdup("null");
+char tree_viz_json[4096] = "";
+
+// 递归构建 JSON 字符串，写入缓冲区
+void build_json(tnode *node, char *buf, size_t *offset, size_t buf_size)
+{
+    if (node == NULL)
+    {
+        *offset += snprintf(buf + *offset, buf_size - *offset, "null");
+        return;
     }
-
-    char* left_json  = tree_to_json(node->l);   // 左子树
-    char* right_json = tree_to_json(node->r);   // 右子树
-
-    // 节点显示文本：ch_val 和 weight
+    // 节点文本
     char text[128];
     snprintf(text, sizeof(text), "ch:%d, w:%d", node->ch_val, node->weight);
 
-    // 拼接成 {"text":"...", "children":[...]}
-    char* json = malloc(1024);
-    snprintf(json, 1024,
-        "{\"text\":\"%s\", \"children\":[%s, %s]}",
-        text, left_json, right_json);
+    *offset += snprintf(buf + *offset, buf_size - *offset,
+                        "{\"text\":\"%s\", \"children\":[", text);
 
-    free(left_json);
-    free(right_json);
-    return json;
+    build_json(node->l, buf, offset, buf_size);
+    *offset += snprintf(buf + *offset, buf_size - *offset, ",");
+    build_json(node->r, buf, offset, buf_size);
+
+    *offset += snprintf(buf + *offset, buf_size - *offset, "]}");
 }
 
-// 调试时调用的入口函数
-const char* visualize_tnode(tnode* root) {
-    static char* current = NULL;
-    if (current) free(current);
-    current = tree_to_json(root);
-    return current;
+// 调用这个函数来填充全局缓冲区
+void viz_tree(tnode *root)
+{
+    size_t offset = 0;
+    memset(tree_viz_json, 0, sizeof(tree_viz_json));
+    build_json(root, tree_viz_json, &offset, sizeof(tree_viz_json));
 }
 
+// 生成 Graphviz DOT 文件，可在 VSCode 中安装 Graphviz 扩展后直接预览
+void viz_dot_r(tnode *node, FILE *fp)
+{
+    if (!node) return;
+    if (node->l)
+    {
+        fprintf(fp, "  n%p [label=\"ch:%d\\nw:%d\"];\n",
+                (void *)node, node->ch_val, node->weight);
+        fprintf(fp, "  n%p [label=\"ch:%d\\nw:%d\"];\n",
+                (void *)node->l, node->l->ch_val, node->l->weight);
+        fprintf(fp, "  n%p -> n%p [label=\" 0\"];\n",
+                (void *)node, (void *)node->l);
+        viz_dot_r(node->l, fp);
+    }
+    if (node->r)
+    {
+        fprintf(fp, "  n%p [label=\"ch:%d\\nw:%d\"];\n",
+                (void *)node, node->ch_val, node->weight);
+        fprintf(fp, "  n%p [label=\"ch:%d\\nw:%d\"];\n",
+                (void *)node->r, node->r->ch_val, node->r->weight);
+        fprintf(fp, "  n%p -> n%p [label=\" 1\"];\n",
+                (void *)node, (void *)node->r);
+        viz_dot_r(node->r, fp);
+    }
+    // 叶节点：无子节点，只输出自身（node->l 和 node->r 都为 NULL 时上面不进入，这里补上）
+    if (!node->l && !node->r)
+    {
+        fprintf(fp, "  n%p [label=\"ch:%d\\nw:%d\"];\n",
+                (void *)node, node->ch_val, node->weight);
+    }
+}
+
+void viz_dot(tnode *root, const char *filename)
+{
+    FILE *fp = fopen(filename, "w");
+    if (!fp) return;
+    fprintf(fp, "digraph Huffman {\n  node [fontname=\"Courier New\"];\n");
+    viz_dot_r(root, fp);
+    fprintf(fp, "}\n");
+    fclose(fp);
+}
 
 int main(int argc, char *argv[])
 {
@@ -404,10 +448,11 @@ int codePath[32]; // 存储码表中的编码
 int codePIndex = 0;
 int currCh = 0;
 tnode dummy = {
-    .ch_val = -1,
+    .ch_val = -1,//防止与EOF混淆
     .weight = 0,
     .r = NULL,
     .l = NULL};
+tnode *treeCur = &dummy; // 树索引
 void reverseCodePath(int len)
 {
     for (int l = 0, r = len - 1; l <= r; l++, r--)
@@ -417,14 +462,14 @@ void reverseCodePath(int len)
         codePath[l] = tmp;
     }
 }
-void tranIntToArray(unsigned int code_int, int code_len) // 将int编码转换成数组
+void tranIntToArray(unsigned int code_int, int codeLen) // 将int编码转换成数组
 {
-    for (int i = 0; i < code_len; ++i)
+    for (int i = 0; i < codeLen; ++i)
     {
         codePath[i] = code_int & 1;
         code_int >>= 1;
     }
-    reverseCodePath(code_len);
+    reverseCodePath(codeLen);
 }
 void rebuildTree(int cPIndex, int len, tnode *cur) // 根据编码路径重建huffman树
 {
@@ -439,7 +484,8 @@ void rebuildTree(int cPIndex, int len, tnode *cur) // 根据编码路径重建hu
             rebuildTree(cPIndex + 1, len, cur->l);
             return;
         }
-        cur->l = buildTnode(cPIndex + 1 == len ? currCh : 0, 0);
+        // BUGFIX: 内部节点 ch_val=-1，与 buildUnitNode 保持一致，避免与 EOF 哨兵(0) 混淆
+        cur->l = buildTnode(cPIndex + 1 == len ? currCh : -1, 0);
         rebuildTree(cPIndex + 1, len, cur->l);
         return;
     }
@@ -448,24 +494,34 @@ void rebuildTree(int cPIndex, int len, tnode *cur) // 根据编码路径重建hu
         rebuildTree(cPIndex + 1, len, cur->r);
         return;
     }
-    cur->r = buildTnode(cPIndex + 1 == len ? currCh : 0, 0);
+    cur->r = buildTnode(cPIndex + 1 == len ? currCh : -1, 0);
     rebuildTree(cPIndex + 1, len, cur->r);
     return;
 }
 
-int dealByte(int codePath[], tnode *cur)
+int dealByte(int codePath[])
 {
-    // 这里传入的codePath是1byte
+    // 每次处理 1 字节（8 bit），treeCur 保持跨字节的树遍历状态
     int ans = 1;
     for (int i = 0; i < 8; ++i)
     {
-        cur = codePath[i] == 1 ? cur->r : cur->l;
-        if (cur->l == NULL && cur->r == NULL)
+        // BUGFIX: 先检查子节点是否存在再跳转，避免码表损坏时 NULL 解引用导致段错误
+        if (codePath[i] == 1)
         {
-            fputc(cur->ch_val, Obj);
-            if (!cur->ch_val)
+            if (treeCur->r == NULL) return 0; // 路径断裂，提前终止解压
+            treeCur = treeCur->r;
+        }
+        else
+        {
+            if (treeCur->l == NULL) return 0;
+            treeCur = treeCur->l;
+        }
+        if (treeCur->l == NULL && treeCur->r == NULL)
+        {
+            fputc(treeCur->ch_val, Obj);
+            if (!treeCur->ch_val)
                 ans = 0;
-            cur = &dummy; // 注意这里的顺序
+            treeCur = &dummy; // 命中叶节点，重置到根准备下一段编码
         }
     }
     return ans;
@@ -481,14 +537,16 @@ void atoUnzip(void)
         currCh = ch_val;
         int code_len = fgetc(Src); // 码长
         unsigned int code_int = 0; // 存储编码为int：码表是整个字节存储
-        for (int i = 0; i < (code_len / 8 + 1); ++i)
+        // BUGFIX: ceil(code_len/8) 的正确写法，避免 code_len 为 8 的倍数时多读 1 字节
+        int byte_cnt = (code_len + 7) / 8;
+        for (int j = 0; j < byte_cnt; ++j)
         {
             code_int = code_int << 8 | fgetc(Src);
         }
-        code_int = code_int >> (8 - (code_len % 8)); // 无符号右移
+        // BUGFIX: 多余位移需取模，code_len%8==0 时不右移
+        code_int = code_int >> ((8 - (code_len % 8)) % 8);
         // 建树
         tranIntToArray(code_int, code_len);
-        currCh = code_int;
         rebuildTree(0, code_len, &dummy);
     }
 
@@ -498,12 +556,12 @@ void atoUnzip(void)
         每次需要处理完一个字节中的所有信息：即如果中间有到达叶节点需要输出然后重置treeCur,然后继续遍历treeCur
     设置一个treeCur用于索引当前遍历位置
     */
-    tnode *treeCur = &dummy; // 树索引
+
     int flag = 1;
     while (flag)
     {
         wbuf = fgetc(Src);
         tranIntToArray(wbuf, 8);
-        flag = dealByte(codePath, treeCur);
+        flag = dealByte(codePath);
     }
 }
