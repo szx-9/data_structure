@@ -66,7 +66,7 @@ int main()
         matirx[n2_id][n1_id].weight=matirx[n1_id][n2_id].weight = weight;
     }
     //prim
-    mst = (info *)malloc(vertex*sizeof(int));
+    mst = (info *)malloc(vertex*sizeof(info));//这里的类型
     ans=(int*)malloc((vertex-1)*sizeof(int));
     visited = (int *)calloc(vertex,sizeof(int));
     for (int i = 0; i < vertex;++i){
@@ -85,5 +85,5 @@ int main()
     for (int i = 0; i < ansIndex;++i){
         printf("%d ", ans[i]);
     }
-        return 0;
+    return 0;
 }
