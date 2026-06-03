@@ -91,7 +91,7 @@ node *find_closest(int row)
         int col = stations[i];
         for (int j = 0; j < col; ++j)
         {
-            if (!line_map[i][j].visited && line_map[i][j].mst <= min_val)
+            if (!line_map[i][j].visited && line_map[i][j].mst < min_val)
             {
                 min_val = line_map[i][j].mst;
                 ret = &line_map[i][j];
@@ -154,8 +154,12 @@ int main()
     for (int i = 0; i < line_num; ++i)
     {
         int l_id = -1, st_num = 0; // 当前线路的id，总站台数
-        fgets(buf, sizeof(buf), fin);
-        sscanf(buf, " %d %d", &l_id, &st_num);
+        // ===== FIX 2: 跳过空行，避免stations[-1]数组越界写入 =====
+        while (fgets(buf, sizeof(buf), fin))
+        {
+            if (sscanf(buf, " %d %d", &l_id, &st_num) == 2)
+                break;
+        }
         stations[l_id] = st_num;
         for (int j = 0; j < st_num; ++j)
         { // 额外处理最后一次
@@ -164,9 +168,13 @@ int main()
             sscanf(buf, " %s %d", line_map[l_id][j].name, &line_map[l_id][j].isTra);
             if (j == st_num - 1 && !strcmp(line_map[l_id][j].name, line_map[l_id][0].name))
             {
-                // 环线
+                // 环线：首尾相连，废弃当前这个重复的末站
                 insert_edge(&line_map[l_id][j - 1], 1, &line_map[l_id][0]);
                 insert_edge(&line_map[l_id][0], 1, &line_map[l_id][j - 1]);
+                // ===== FIX 1: 废弃结点必须标记为"不可用"，防止污染Dijkstra =====
+                line_map[l_id][j].mst = INT_MAX;   // 防止mst=0参与最短路径竞争
+                line_map[l_id][j].visited = 1;     // 标记已访问，Dijkstra跳过
+                line_map[l_id][j].isTra = 0;       // 防止dealTran连接到该废弃结点
                 line_map[l_id][j].l_id = 0;
                 break;
             }
@@ -194,6 +202,15 @@ int main()
                 dealTran(&line_map[l_id][j], l_id, j);
             }
         }
+    }
+    // ===== FIX 3: 检查起点终点是否在文件中找到 =====
+    if (Start == NULL || End == NULL)
+    {
+        printf("ERROR: 未在文件中找到%s或%s\n",
+               Start == NULL ? start_name : end_name,
+               End == NULL ? end_name : start_name);
+        fclose(fin);
+        return 1;
     }
     Start->mst = 0;//此时只有起点到自己距离是0，其余都是INT_MAX
     while(1){
