@@ -13,8 +13,16 @@
 #define MAX_SIZE_ANS 100
 /*
 读取信息：
-    行读取：利用sscanf读取站台名和是否为换乘
+    行读取：利用sscanf读取站台名和是否为换乘(注意跳过空行)
+    记录结点信息：输入当前结点和前一个结点之间的edge信息（注意头结点和环线的特判：环线中需要将最后一个结点废弃，因为stattions中记录了这个结点后续会遍历到）
+    进行所有换乘站的edge_info记录
+    过程中需要记录start end指针指向
+从终点开始遍历前驱节点到数组中，reverse，根据数组信息按照要求输出
 
+dijkstra/prim算法：
+1找到当前结点中距离起点最近的（第一次直接用起点）
+2标记该结点为visited
+3对该节点所有连接结点进行更新(mst prev：最短路径和前驱节点，后者在该结点被选为最近结点时确定)
 */
 typedef struct edge_info edge;
 typedef struct node_info node;
@@ -23,7 +31,7 @@ struct edge_info
 {
     char weight;
     node *l_node;
-} ;
+};
 struct node_info
 {
     int n_id, l_id, isTra;  // 结点id，线路id，是否换乘
@@ -32,7 +40,7 @@ struct node_info
     char name[MAX_NAME];
     edge link[MAX_EDGE];
     int index; // link的容量
-} ;
+};
 
 // 全局指针
 node *Start = NULL, *End = NULL;               // 起点，终a点
@@ -49,9 +57,11 @@ int p_index = 0;
 int line_num = -1; // 线路个数
 int n_id = 0;      // 全局结点id,同时记录数量
 
-void reverse(int size){
+void reverse(int size)
+{
     int l = 0, r = size - 1;
-    while(l<r){
+    while (l < r)
+    {
         node *tmp = path[l];
         path[l] = path[r];
         path[r] = tmp;
@@ -98,7 +108,8 @@ node *find_closest(int row)
             }
         }
     }
-    if(ret==NULL){
+    if (ret == NULL)
+    {
         printf("ERROR_FIND");
         exit(1);
     }
@@ -107,41 +118,47 @@ node *find_closest(int row)
 void renew(node *cur)
 {
     // 更新与当前cur结点相连的所有结点mst和prev
-    if(cur->mst==INT_MAX){
+    if (cur->mst == INT_MAX)
+    {
         printf("ERROR_RENEW\n");
         exit(1);
     }
     for (int i = 0; i < cur->index; ++i)
     {
-        edge* cur_edge = &cur->link[i];
-        node* cur_node = cur_edge->l_node;
-        if(!cur_edge->l_node->visited&&cur_node->mst>cur_edge->weight+cur->mst){
-            //如果当前结点未访问&&最小距离大于本轮结点的mst+两者之间的权重
+        edge *cur_edge = &cur->link[i];
+        node *cur_node = cur_edge->l_node;
+        if (!cur_edge->l_node->visited && cur_node->mst > cur_edge->weight + cur->mst)
+        {
+            // 如果当前结点未访问&&最小距离大于本轮结点的mst+两者之间的权重
             cur_node->mst = cur_edge->weight + cur->mst;
             cur_node->prev = cur;
         }
     }
 }
-void Print(int size){
+void Print(int size)
+{
     printf("%s", Start->name);
     int cur_line = Start->l_id;
     int st_cnt = 0;
-    for (int i = 0; i < size;++i){
-        if(path[i]->l_id!=cur_line){
-            //当前结点线路不是原线路
-            printf("-%d(%d)-%s",  cur_line, st_cnt,path[i]->name);
+    for (int i = 0; i < size; ++i)
+    {
+        if (path[i]->l_id != cur_line)
+        {
+            // 当前结点线路不是原线路
+            printf("-%d(%d)-%s", cur_line, st_cnt, path[i]->name);
             cur_line = path[i]->l_id;
             st_cnt = 0;
         }
-        else{
+        else
+        {
             st_cnt++;
         }
     }
-    if(st_cnt){
+    if (st_cnt)
+    {
         printf("-%d(%d)-%s", cur_line, st_cnt, End->name);
     }
 }
-
 
 int main()
 {
@@ -172,9 +189,9 @@ int main()
                 insert_edge(&line_map[l_id][j - 1], 1, &line_map[l_id][0]);
                 insert_edge(&line_map[l_id][0], 1, &line_map[l_id][j - 1]);
                 // ===== FIX 1: 废弃结点必须标记为"不可用"，防止污染Dijkstra =====
-                line_map[l_id][j].mst = INT_MAX;   // 防止mst=0参与最短路径竞争
-                line_map[l_id][j].visited = 1;     // 标记已访问，Dijkstra跳过
-                line_map[l_id][j].isTra = 0;       // 防止dealTran连接到该废弃结点
+                line_map[l_id][j].mst = INT_MAX; // 防止mst=0参与最短路径竞争
+                line_map[l_id][j].visited = 1;   // 标记已访问，Dijkstra跳过
+                line_map[l_id][j].isTra = 0;     // 防止dealTran连接到该废弃结点
                 line_map[l_id][j].l_id = 0;
                 break;
             }
@@ -212,19 +229,21 @@ int main()
         fclose(fin);
         return 1;
     }
-    Start->mst = 0;//此时只有起点到自己距离是0，其余都是INT_MAX
-    while(1){
-        node* cur_ori_node = find_closest(MAX_LINE);
+    Start->mst = 0; // 此时只有起点到自己距离是0，其余都是INT_MAX
+    while (1)
+    {
+        node *cur_ori_node = find_closest(MAX_LINE);
         cur_ori_node->visited = 1;
         renew(cur_ori_node);
-        if (cur_ori_node==End)
-        {//当前找到最短结点是终点
+        if (cur_ori_node == End)
+        { // 当前找到最短结点是终点
             break;
         }
     }
-    //从终点开始输入
+    // 从终点开始输入
     node *res = End;
-    while(res!=Start){
+    while (res != Start)
+    {
         if (res == NULL)
         {
             printf("ERROR_PATH\n");
